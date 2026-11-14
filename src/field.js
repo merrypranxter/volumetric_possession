@@ -111,12 +111,25 @@ export class PigmentField {
     this.a.set(s.values);this.impulses.length=0;this.dirty=true;
   }
   stamp(p,r,channel,amount=.38){
-    const lo=p.map(v=>clamp(Math.floor((v-r+1)*N*.5),0,N-1));
-    const hi=p.map(v=>clamp(Math.ceil((v+r+1)*N*.5),0,N-1));
+    if(!Number.isInteger(channel)||channel<0||channel>2)throw Error("Invalid pigment channel");
+    const color=[0,0,0];color[channel]=amount;
+    this.stampRGB(p,r,color);
+  }
+  // True palette-channel deposition, not an on-screen overlay.
+  stampRGB(p,r,color){
+    if(!Array.isArray(p)||p.length!==3||!p.every(Number.isFinite)||
+       !Number.isFinite(r)||r<=0||!Array.isArray(color)||color.length!==3||
+       !color.every(v=>Number.isFinite(v)&&v>=0&&v<=1))
+      throw Error("Invalid chromatic volume stamp");
+    const radius=clamp(r,.02,.7);
+    const lo=p.map(v=>clamp(Math.floor((v-radius+1)*N*.5),0,N-1));
+    const hi=p.map(v=>clamp(Math.ceil((v+radius+1)*N*.5),0,N-1));
     for(let z=lo[2];z<=hi[2];z++)for(let y=lo[1];y<=hi[1];y++)for(let x=lo[0];x<=hi[0];x++){
-      const dx=2*(x+.5)/N-1-p[0],dy=2*(y+.5)/N-1-p[1],dz=2*(z+.5)/N-1-p[2],d=(dx*dx+dy*dy+dz*dz)/(r*r);
+      const dx=2*(x+.5)/N-1-p[0],dy=2*(y+.5)/N-1-p[1],dz=2*(z+.5)/N-1-p[2];
+      const d=(dx*dx+dy*dy+dz*dz)/(radius*radius);
       if(d>=1)continue;
-      const i=index(x,y,z)+channel,w=(1-d)*(1-d);this.a[i]=clamp(this.a[i]+amount*w,0,1);
+      const i=index(x,y,z),w=(1-d)*(1-d);
+      for(let c=0;c<3;c++)this.a[i+c]=clamp(this.a[i+c]+color[c]*w,0,1);
     }
     this.dirty=true;
   }
