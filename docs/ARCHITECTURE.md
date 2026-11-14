@@ -153,3 +153,33 @@ The strength is controlled by Fiber Glints, multiplied by coherence; it modulate
 - CPU checks: deterministic seeded director evolution, finite bounds, no coherence on reset, positive coherence after time steps, RGB changes under guidance vs guidance zero, exact freeze, exact snapshot restoration.
 - Mocked GPU checks: 28 dye + 28 fiber slice draws per step, shader uniform propagation and controls, double-volume checkpoint/restore, disabled fiber pass, 2 reset texture uploads and zero readPixels.
 - Full live WebGL2 shader compilation, Safari frame rate, and visual aesthetics **not verified by the mock**. If mobile performance suffers, toggle Fiber Evolution Off and reduce render quality. High fidelity stretch will require more resolution and physically richer deformation machinery.
+
+## Phase 01I — Flow Necromancer: editable persistent velocity anchors
+
+The artist can place, drag, remove, or summon up to six persistent 3D nodes directly in the artwork. These nodes are stored in the same CPU/GPU simulation state as pigment, fold memory and fiber memory (without allocating another 3D texture). Unlike temporary Stir impulses, nodes remain until removed, Undone, or the artwork is regenerated.
+
+### Physical field (art-directed, not a pressure solver)
+For a node centered at `p0`, position delta `d = p - p0`, radius `r`, phase `φ`, strength `s`:
+`g = 0.60 s (0.78+0.22 sin(0.83 t+φ)) exp(-|d|²/(2r²))/r`.
+The field is evaluated only within `|d|² <= 9 r²` (bounded support via a hard cutoff). The three modes contribute:
+- **Whirlpool:** `g [d_z,0,-d_x]` (localized world-Y vortex, divergence-free inside the support interior).
+- **Implode:** `-g d` (compressible sink).
+- **Repel:** `+g d` (compressible source).
+
+This flow is added to the existing analytic field and temporary impulses. It affects the **same physical dye and fiber transport**, including its changing fold/filament state. It is not an extra visual mask, a global camera motion, or a Navier–Stokes pressure projection. Sharp support cutoff can introduce a velocity discontinuity at exactly 3r; forces are visually localized, not strictly physically continuous at that boundary. The soft periodic multiplier varies node strength over time but does not guarantee the overall artwork loops.
+
+CPU uses `src/flow-sculpt.js`, called from PigmentField.velocity after baseline turbulence/impulses. GPU uses equivalent GLSL logic in the shared dye velocity header, automatically inherited by the GPU fiber pass. Uniforms are `uSculptCount, uSculptPos[6], uSculptInfo[6]`; six vectors are bound per pass. Max six avoids unbounded mobile loops. Empty-node simulations are behaviorally identical to the prior version.
+
+### Gestures / camera
+- **Sculpt** mode is a fourth touch tool beside Stir, Inject, Orbit. Tap to place the active force type at the Touch Depth plane, or drag a glowing on-volume handle to reposition an existing anchor at its prior camera-depth plane. Handle projection uses the exact inverse of the renderer's cover camera; it respects portrait/landscape proportions, rotation, zoom and device pixel ratio.
+- **Motion → Flow Necromancer:** Force Spell, Strength, Radius, Count, Summon Three Forces, Remove Selected, Clear All. Strength/radius edits for an active selected node checkpoint on edit completion rather than every slider frame; changing type is undoable. Summon adds up to three when capacity permits. Clear All asks for confirmation.
+- Persistent anchors are intentionally cleared on Restart and New Design, just like other user-authored geometry. The force settings themselves are retained in their sliders. Empty scene remains the default so existing preset simulations are not changed unexpectedly.
+- Multitouch pinch temporarily cancels an in-progress sculpt gesture with checkpoint restoration, preserving the existing zoom interaction. An Art Only view hides handles along with the dock.
+
+### Testing boundaries
+- 3D orientation tests confirmed nonzero velocity and actual pigment/fiber differences with anchors, exact fixed-seed repeat, GPU/CPU state checkpoints, Undo/Redo and mobile camera projection/picking inversion.
+- Mock WebGL2 tests confirmed bound uniforms on both dye/fiber passes, 56 volume slice writes on active fiber frames, GPU-to-GPU checkpoint copies of both volumes, and no CPU readPixels.
+- **Actual browser shader compilation and iPhone Safari render/performance are not verified**; the source should be tested on a real WebGL2 phone before claiming seamless behavior. Attractive sink/repulsive source nodes are intentionally compressible and can concentrate pigment. Mobile users can remove anchors or disable fiber evolution to reduce load.
+
+### Follow-on
+Potential next phase: genuinely editable 3D flow curves, split/merge gestures and deformation handles for sculptural topology, possibly requiring finer than 28³ volume resolution.

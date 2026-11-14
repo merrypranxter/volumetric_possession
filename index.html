@@ -48,6 +48,15 @@ header .eyebrow{font-size:9px}header .meta{font-size:10px}
 .frame{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;overflow:hidden;
   border:0;border-radius:0;box-shadow:none;background:#05030d}
 canvas{display:block;width:100%;height:100%;touch-action:none}
+#sculptMarkers{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.sculpt-node{position:absolute;transform:translate(-50%,-50%);width:34px;height:34px;
+ display:flex;align-items:center;justify-content:center;border:1.5px solid #e7b4ffdd;
+ border-radius:50%;background:#1609239c;color:#fff6ff;box-shadow:0 0 19px #d365f1a6,
+ inset 0 0 12px #672e9faa;font:800 17px ui-monospace,monospace}
+.sculpt-node[data-kind="pull"]{border-color:#59e5ff;box-shadow:0 0 18px #21d4ffac}
+.sculpt-node[data-kind="push"]{border-color:#ffcf63;box-shadow:0 0 18px #ff9e51bc}
+.sculpt-node.active{outline:2px solid #fff;outline-offset:3px}
+body.art-only #sculptMarkers{display:none!important}
 .overlay{top:calc(87px + env(safe-area-inset-top,0px));left:15px;
   background:#130b25a6;border-color:#53346a9c}
 .dock{position:fixed;z-index:20;bottom:0;left:50%;transform:translateX(-50%);
@@ -96,9 +105,9 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / FIBER NERVES 01H</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / FLOW NECROMANCER 01I</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
-<div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
+<div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div id="sculptMarkers" aria-hidden="true"></div><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
 <aside class="dock" id="controlDock" aria-label="Art controls">
 <div class="dock-quick">
@@ -112,7 +121,8 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 <div class="modes" aria-label="Touch tools">
 <button type="button" class="mode" data-mode="stir" aria-pressed="true">✳ Stir</button>
 <button type="button" class="mode" data-mode="inject" aria-pressed="false">◉ Inject pigment</button>
-<button type="button" class="mode" data-mode="orbit" aria-pressed="false">⟳ Orbit camera</button>
+<button type="button" class="mode" data-mode="orbit" aria-pressed="false">⟳ Orbit</button>
+<button type="button" class="mode" data-mode="sculpt" aria-pressed="false">⟡ Sculpt</button>
 </div>
 <div id="dockDetails" hidden>
 <div class="actionbar">
@@ -130,6 +140,27 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 <label>Touch force <output id="forceText">1.0</output><input id="force" type="range" min=".2" max="3" step=".1" value="1"></label>
 <label>Brush radius <output id="brushText">0.22</output><input id="brush" type="range" min=".07" max=".5" step=".01" value=".22"></label>
 <label>Touch depth <output id="depthText">0.00</output><input id="depth" type="range" min="-.75" max=".75" step=".05" value="0"></label></div>
+<details class="subsystem" id="sculptPanel" open>
+<summary>⟡ Flow Necromancer — persistent force anchors</summary>
+<div class="grid">
+<label>Force spell<select id="sculptType">
+<option value="vortex">🌀 Whirlpool</option>
+<option value="pull">◉ Implode / Pull</option>
+<option value="push">✹ Repel / Push</option>
+</select></label>
+<label>Node count <output id="sculptCount">0 / 6</output><span class="muted">Visible in Sculpt mode</span></label>
+<label>Force strength <output id="sculptStrengthText">1.5</output>
+<input id="sculptStrength" type="range" min=".1" max="3" step=".1" value="1.5"></label>
+<label>Force radius <output id="sculptRadiusText">0.30</output>
+<input id="sculptRadius" type="range" min=".12" max=".70" step=".02" value=".30"></label>
+</div>
+<div class="actionbar">
+<button type="button" id="summonTriad">✦ Summon three forces</button>
+<button type="button" id="removeSculpt">⌫ Remove selected</button>
+<button type="button" id="clearSculpt">Clear all anchors</button>
+</div>
+<p class="help">Tap artwork in Sculpt mode to place a force, or drag a glowing handle to reposition it. Each anchor persists and alters the actual 3D pigment and fiber flow. Six maximum to keep iPhone performance sane. Undo/Redo saves positions and their effects; Restart and New Design clear placed anchors.</p>
+</details>
 <p class="help">These are different divergence-free baseline flow laws—not merely new speeds. Switching a flow changes future transport without resetting existing pigment. Stir adds a local temporary impulse; Inject paints density; Orbit changes only the viewpoint.</p>
 </section>
 <section class="panel" id="material">

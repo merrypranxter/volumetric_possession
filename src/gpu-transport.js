@@ -2,6 +2,7 @@
 // Uses WebGL2 texture-layer rendering. Not pressure-projected Navier-Stokes.
 import {N} from "./field.js";
 import {GPUFiberMemory} from "./gpu-fiber-memory.js";
+import {cloneSculptNodes} from "./flow-sculpt.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
@@ -12,9 +13,10 @@ uniform sampler3D uPrev,uFiberPrev;
 uniform float uLayer,uDim,uTime,uDt,uSpeed,uSeedPhase,uTurb;
 uniform float uFoldWrite,uFoldPersistence,uFoldGrip,uFiberGuidance;
 uniform float uFiberGrowth,uFiberBend,uFiberPersistence; // shared header for director pass
-uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled;
+uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled,uSculptCount;
 uniform float uForgePower,uForgeWidth,uForgePace;
 uniform vec4 uImpulsePos[8],uImpulseVel[8],uStampPos[16],uStampColor[16];
+uniform vec4 uSculptPos[6],uSculptInfo[6];
 out vec4 fragColor;
 vec3 velocity(vec3 p,float t){
  float x=p.x,y=p.y,z=p.z,k=uSeedPhase;
@@ -48,6 +50,19 @@ vec3 velocity(vec3 p,float t){
    vec3 d=p-uImpulsePos[i].xyz;float r=uImpulsePos[i].w;
    float dd=dot(d,d);if(dd>9.0*r*r)continue;
    v+=uImpulseVel[i].xyz*exp(-dd/(2.0*r*r))*(uImpulseVel[i].w/.9);
+ }
+ // Persistent, artist-positioned force anchors, read by both dye and fibers.
+ for(int i=0;i<6;i++){
+   if(i>=uSculptCount)break;
+   vec3 d=p-uSculptPos[i].xyz;
+   float radius=max(.12,uSculptPos[i].w),dist2=dot(d,d);
+   if(dist2>9.0*radius*radius)continue;
+   vec4 spec=uSculptInfo[i];
+   float pulse=.78+.22*sin(.83*t+spec.z);
+   float gain=spec.y*.60*pulse*exp(-dist2/(2.0*radius*radius))/radius;
+   if(spec.x<.5)v+=vec3(d.z,0.0,-d.x)*gain;
+   else if(spec.x<1.5)v-=d*gain;
+   else v+=d*gain;
  }
  return v;
 }
@@ -164,9 +179,9 @@ export class GPUPigmentTransport{
    gl.deleteShader(v);gl.deleteShader(f);
    if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error("GPU transport link: "+gl.getProgramInfoLog(p));
    this.program=p;this.vao=gl.createVertexArray();this.loc={};
-   const names=["uFiberPrev","uFiberEnabled","uFiberGuidance","uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uForgeMode","uForgePower","uForgeWidth","uForgePace","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
+   const names=["uFiberPrev","uFiberEnabled","uFiberGuidance","uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uForgeMode","uForgePower","uForgeWidth","uForgePace","uImpulsePos","uImpulseVel","uStampPos","uStampColor","uSculptCount","uSculptPos","uSculptInfo"];
    for(const n of names)this.loc[n]=gl.getUniformLocation(p,n);
-   for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
+   for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor","uSculptPos","uSculptInfo"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
    this.time=source.time;this.seed=source.seed;this.morphology=source.morphology;this.flow=source.flow;
    this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
    this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
@@ -178,6 +193,7 @@ export class GPUPigmentTransport{
    this.fiberEnabled=source.fiberEnabled??true;
    this.forgeMode=source.forgeMode??"rosette";this.forgePower=source.forgePower??.75;
    this.forgeWidth=source.forgeWidth??.17;this.forgePace=source.forgePace??.65;
+   this.sculptNodes=cloneSculptNodes(source.sculptNodes||[]);
    this.impulses=[];this.pending=[];
    this.fibers=new GPUFiberMemory(renderer,VS,FS);
    renderer.externalSource=true;renderer.texture=this.front;
@@ -207,6 +223,16 @@ export class GPUPigmentTransport{
    const pp=new Float32Array(32),pv=new Float32Array(32);
    for(let i=0;i<this.impulses.length;i++){const s=this.impulses[i];pp.set([...s.p,s.r],i*4);pv.set([...s.v,s.ttl],i*4);}
    gl.uniform1i(U.uImpulseCount,this.impulses.length);gl.uniform4fv(U.uImpulsePos,pp);gl.uniform4fv(U.uImpulseVel,pv);
+   const sculptPos=new Float32Array(24),sculptInfo=new Float32Array(24);
+   const nSculpt=Math.min(6,this.sculptNodes.length);
+   for(let i=0;i<nSculpt;i++){
+     const n=this.sculptNodes[i];
+     sculptPos.set([...n.p,n.r],i*4);
+     sculptInfo.set([({vortex:0,pull:1,push:2})[n.type]??0,n.strength,n.phase||0,0],i*4);
+   }
+   gl.uniform1i(U.uSculptCount,nSculpt);
+   gl.uniform4fv(U.uSculptPos,sculptPos);
+   gl.uniform4fv(U.uSculptInfo,sculptInfo);
    const count=Math.min(16,this.pending.length),sp=new Float32Array(64),sc=new Float32Array(64);
    for(let i=0;i<count;i++){const s=this.pending[i];sp.set([...s.p,s.r],i*4);sc.set([...s.color,0],i*4);}
    gl.uniform1i(U.uStampCount,count);gl.uniform4fv(U.uStampPos,sp);gl.uniform4fv(U.uStampColor,sc);
@@ -225,7 +251,7 @@ export class GPUPigmentTransport{
      flow:this.flow,turbulence:this.turbulence,integration:this.integration,
      foldGrip:this.foldGrip,fiberGrowth:this.fiberGrowth,
      fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
-     fiberGuidance:this.fiberGuidance,impulses:this.impulses
+     fiberGuidance:this.fiberGuidance,impulses:this.impulses,sculptNodes:this.sculptNodes
    });
    [this.front,this.back]=[this.back,this.front];this.renderer.texture=this.front;
    this.time+=dt;this.pending.splice(0,count);
@@ -250,7 +276,8 @@ export class GPUPigmentTransport{
      foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,
      forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,
      fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,
-     fiberBend:this.fiberBend,fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled};
+     fiberBend:this.fiberBend,fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,
+     sculptNodes:cloneSculptNodes(this.sculptNodes)};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
@@ -262,6 +289,7 @@ export class GPUPigmentTransport{
    this.fiberGrowth=s.fiberGrowth??2.3;this.fiberPersistence=s.fiberPersistence??.88;
    this.fiberBend=s.fiberBend??1;this.fiberGuidance=s.fiberGuidance??.65;
    this.fiberEnabled=s.fiberEnabled??true;
+   this.sculptNodes=cloneSculptNodes(s.sculptNodes||[]);
    this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
    this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
@@ -276,6 +304,10 @@ export class GPUPigmentTransport{
    this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
    this.forgeMode=source.forgeMode??"rosette";this.forgePower=source.forgePower??.75;
    this.forgeWidth=source.forgeWidth??.17;this.forgePace=source.forgePace??.65;
+   this.fiberGrowth=source.fiberGrowth??2.3;this.fiberPersistence=source.fiberPersistence??.88;
+   this.fiberBend=source.fiberBend??1;this.fiberGuidance=source.fiberGuidance??.65;
+   this.fiberEnabled=source.fiberEnabled??true;
+   this.sculptNodes=cloneSculptNodes(source.sculptNodes||[]);
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
 }
