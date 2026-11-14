@@ -13,6 +13,7 @@ import {GPUPigmentTransport} from "./gpu-transport.js";
 import {twistForceCurve,twoFingerTransform,wrappedTurn} from "./gesture-twist.js";
 import {cloneColorState,moveColorLens} from "./color-control.js";
 import {measureAuthoredWinding,projectWindingDefects} from "./flow-winding.js";
+import {closestScreenCurve,bendForceCurve} from "./elastic-strand.js";
 const $=id=>document.getElementById(id);
 const palettes={
  "Prismatic Riot":["#ff36cb","#1df6eb","#ffe143"],
@@ -377,19 +378,9 @@ function pickCurveHandle(event){
 }
 function nearestCurve(event){
   const rect=canvas.getBoundingClientRect();
-  const x=event.clientX-rect.left,y=event.clientY-rect.top;
-  let best=-1,bestDist2=24*24;
-  for(const [k,curve] of displayFlowCurves().entries()){
-    const pts=curve.points.map(p=>projectToScreen(canvas,camera,p));
-    for(let j=1;j<pts.length;j++){
-      if(!pts[j]||!pts[j-1])continue;
-      const a=pts[j-1],b=pts[j],sx=b.x-a.x,sy=b.y-a.y,ss=sx*sx+sy*sy;
-      const u=ss>1e-8?Math.max(0,Math.min(1,((x-a.x)*sx+(y-a.y)*sy)/ss)):0;
-      const dd=(x-a.x-u*sx)**2+(y-a.y-u*sy)**2;
-      if(dd<bestDist2){bestDist2=dd;best=k;}
-    }
-  }
-  return best;
+  return closestScreenCurve(displayFlowCurves(),
+    p=>projectToScreen(canvas,camera,p),
+    event.clientX-rect.left,event.clientY-rect.top,27);
 }
 let pinchSpan=0;
 const limitZoom=d=>Math.max(1.22,Math.min(5.6,d));
@@ -476,8 +467,12 @@ function draw(){
     colorGrade:grade,windingDefects:projected});
   updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();
 }
-function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera",sculpt:"SCULPT · tap to anchor / drag glowing handles",curve:"DRAW FLOW · twist/pinch a selected curve to edit its force",neon:"NEON LENS · drag light focus / pinch lens radius"}[mode];updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();}
+function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera",sculpt:"SCULPT · tap to anchor / drag glowing handles",curve:"DRAW FLOW · tug locally, drag a handle, or twist/pinch the force",neon:"NEON LENS · drag light focus / pinch lens radius"}[mode];updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();}
 for(const b of document.querySelectorAll(".mode"))b.addEventListener("click",()=>setMode(b.dataset.mode));
+// Elastic gesture reach and tension are brush preferences, not new GPU passes.
+for(const [id,digits] of [["curveTugReach",2],["curveTugPower",1]]){
+  $(id).addEventListener("input",()=>{$(id+"Text").textContent=Number($(id).value).toFixed(digits);});
+}
 for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>{
   for(const t of document.querySelectorAll(".tab"))t.setAttribute("aria-pressed",String(t===b));
   for(const p of document.querySelectorAll(".panel"))p.classList.toggle("open",p.id===b.dataset.panel);
@@ -1095,7 +1090,7 @@ canvas.addEventListener("pointerdown",event=>{
   if(pinchSuppressed||active)return;
   active={id:event.pointerId,x:event.clientX,y:event.clientY,mode,
     before:mode==="orbit"?null:engine.snapshot(),changed:false,sculptIndex:-1,
-    curveIndex:-1,curveMoving:false,curveRaw:null,curveHandle:-1};
+    curveIndex:-1,curveMoving:false,curveRaw:null,curveHandle:-1,curveTug:null};
   if(mode==="curve"){
     const handle=pickCurveHandle(event);
     if(handle>=0){
@@ -1103,10 +1098,19 @@ canvas.addEventListener("pointerdown",event=>{
       selectedHandle=handle;
       status("Bend control point "+(handle+1)+" · release to save one Undo step");
     }else{
-      const found=nearestCurve(event);
+      const grab=nearestCurve(event),found=grab?.index??-1;
       if(found>=0){
-        selectedCurve=found;selectedHandle=-1;active.curveIndex=found;active.curveMoving=true;
-        status("Selected entire curve · drag its line to translate it");
+        selectedCurve=found;selectedHandle=-1;active.curveIndex=found;
+        active.curveMoving=$("curveDragBehavior").value==="move";
+        if(active.curveMoving){
+          status("Move whole 3D strand · release to save one Undo step");
+        }else{
+          active.curveTug={
+            original:cloneFlowCurves([engine.flowCurves[found]])[0],
+            contact:grab.contact,world:grab.world.slice(),delta:[0,0,0]
+          };
+          status("ELASTIC TUG · drag this spot to bend its local 3D force · release to save");
+        }
       }else{
       if(engine.flowCurves.length>=MAX_CURVES){
         engine.release?.(active.before);active=null;
@@ -1212,6 +1216,20 @@ canvas.addEventListener("pointermove",event=>{
           curve.points[active.curveHandle]=next;
           active.changed=true;
         }
+      }
+    }else if(active.curveTug){
+      const tug=active.curveTug,forward=cameraVectors(camera).forward;
+      const depth=tug.world.reduce((sum,v,k)=>sum+v*forward[k],0);
+      const oldPoint=pointFromScreen(canvas,camera,{clientX:oldX,clientY:oldY},depth).point;
+      const newPoint=pointFromScreen(canvas,camera,event,depth).point;
+      for(let k=0;k<3;k++)tug.delta[k]+=newPoint[k]-oldPoint[k];
+      const bent=bendForceCurve(tug.original,tug.contact,tug.delta,
+        Number($("curveTugReach").value),Number($("curveTugPower").value));
+      const prior=engine.flowCurves[active.curveIndex];
+      if(prior&&bent.points.some((p,i)=>p.some((v,k)=>Math.abs(v-(prior.points[i]?.[k]??0))>1.e-5))){
+        engine.flowCurves[active.curveIndex]=bent;
+        if(engine!==field)field.flowCurves=cloneFlowCurves(engine.flowCurves);
+        active.changed=true;lastWindingScan=0;
       }
     }else if(active.curveMoving){
       const curve=engine.flowCurves[active.curveIndex];
