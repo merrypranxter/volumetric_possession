@@ -33,24 +33,89 @@ select{width:100%;max-width:100%;background:#241b32}
 .note{color:#edc5f8;font-size:12px;margin:12px 0 0}
 @media(max-width:420px){main{padding:10px 9px 38px}.stage{top:0}.frame{border-radius:12px}.grid{gap:10px 12px}.tab{padding:10px 9px}}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+
+/* Phase 01F — no specimen box: the simulation is the viewport. */
+html,body{height:100%;width:100%;overflow:hidden;overscroll-behavior:none}
+body{background:#05030d}
+main{width:100%;max-width:none;min-height:100dvh;height:100dvh;padding:0;overflow:hidden}
+header{position:fixed;z-index:12;top:env(safe-area-inset-top,0px);left:0;right:0;
+  padding:13px max(15px,env(safe-area-inset-left,0px)) 15px;
+  margin:0;align-items:center;pointer-events:none;
+  background:linear-gradient(180deg,#080614e8 0%,#08061485 65%,transparent 100%)}
+header h1{font-size:clamp(19px,4.3vw,29px);line-height:.97;letter-spacing:-.04em}
+header .eyebrow{font-size:9px}header .meta{font-size:10px}
+.stage{position:fixed;inset:0;z-index:0;padding:0;height:100dvh;background:#05030d;backdrop-filter:none}
+.frame{position:absolute;inset:0;width:100%;height:100%;aspect-ratio:auto;overflow:hidden;
+  border:0;border-radius:0;box-shadow:none;background:#05030d}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+.overlay{top:calc(87px + env(safe-area-inset-top,0px));left:15px;
+  background:#130b25a6;border-color:#53346a9c}
+.dock{position:fixed;z-index:20;bottom:0;left:50%;transform:translateX(-50%);
+  width:min(720px,100%);padding:8px max(10px,env(safe-area-inset-right,0px))
+    max(7px,env(safe-area-inset-bottom,0px));
+  background:linear-gradient(180deg,#120b27e9,#0a0714f4);
+  border:1px solid #65447a88;border-bottom:0;border-radius:16px 16px 0 0;
+  box-shadow:0 -9px 40px #0009;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
+.dock-quick{display:flex;gap:6px;align-items:center;min-height:39px}
+.dock-quick button{padding:9px 10px;font-size:12px;flex:0 0 auto}
+#controlsToggle{flex:1;text-align:left;border-color:#aa58da;background:#322047}
+#fitView{border-color:#6b99cb}
+.dock .modes{margin:0;justify-content:center;padding:5px 0;gap:5px}
+.dock .modes button{flex:1;min-width:0;text-align:center;padding:8px 6px;font-size:11px}
+#status{min-height:17px;font-size:10px;padding:3px 2px;color:#d9cafa;line-height:1.3}
+#dockDetails{max-height:min(58dvh,540px);overflow-y:auto;overscroll-behavior:contain;
+  padding-bottom:5px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+#dockDetails[hidden]{display:none!important}
+.dock .actionbar{padding:8px 0}
+.dock .tabs{margin-top:1px;position:sticky;top:0;background:#160e25;z-index:2}
+.dock .panel{padding:12px 12px 14px;margin:4px 0 0}
+.dock .help{font-size:11px}
+.dock .note{font-size:11px}
+#returnUI{position:fixed;right:max(12px,env(safe-area-inset-right,0px));
+  bottom:max(12px,env(safe-area-inset-bottom,0px));z-index:30;
+  border-radius:999px;border-color:#b16dce;background:#241638c4;
+  box-shadow:0 4px 22px #0008;backdrop-filter:blur(12px)}
+#returnUI[hidden]{display:none!important}
+body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!important}
+@media (min-width:760px){.dock{border-radius:18px 18px 0 0}}
+@media (max-width:420px){
+  main{padding:0}.stage{top:0}.frame{border-radius:0}
+  header{padding:11px 13px}header h1{font-size:20px}
+  .dock{padding-left:8px;padding-right:8px}
+  .dock-quick button{font-size:11px;padding:9px 9px}
+  .dock .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 9px}
+  .dock .tab{padding:10px 9px}
+}
+@media(max-height:490px){header{padding-top:7px}header h1{font-size:18px}
+  .overlay{top:60px}#dockDetails{max-height:56dvh}}
+
 </style>
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01E</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / IMMERSIVE 01F</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
-<div class="frame"><canvas id="art" aria-label="Interactive three-dimensional pigment volume"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
+<div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
+</section>
+<aside class="dock" id="controlDock" aria-label="Art controls">
+<div class="dock-quick">
+  <button type="button" id="controlsToggle" aria-expanded="false" aria-controls="dockDetails">⚙ Controls</button>
+  <button type="button" id="zoomOut" aria-label="Zoom out">−</button>
+  <button type="button" id="zoomIn" aria-label="Zoom in">+</button>
+  <button type="button" id="fitView" title="Return to immersive view">⛶ Fill view</button>
+  <button type="button" id="artOnly" aria-label="Show artwork without controls" title="Art only">◉</button>
+</div>
 <div id="status" role="status">Preparing the volume…</div>
 <div class="modes" aria-label="Touch tools">
 <button type="button" class="mode" data-mode="stir" aria-pressed="true">✳ Stir</button>
 <button type="button" class="mode" data-mode="inject" aria-pressed="false">◉ Inject pigment</button>
 <button type="button" class="mode" data-mode="orbit" aria-pressed="false">⟳ Orbit camera</button>
 </div>
+<div id="dockDetails" hidden>
 <div class="actionbar">
 <button id="pause">Ⅱ Pause</button><button id="undo" disabled>↶ Undo</button><button id="redo" disabled>↷ Redo</button>
 <button id="restart">Restart seed</button><button id="new" class="primary">✦ New design</button><button id="png">↓ PNG</button>
 </div>
-</section>
 <nav class="tabs" aria-label="Control groups">
 <button class="tab" data-panel="motion" aria-pressed="true">Motion</button>
 <button class="tab" data-panel="material" aria-pressed="false">Substance</button>
@@ -58,7 +123,7 @@ select{width:100%;max-width:100%;background:#241b32}
 </nav>
 <section class="panel open" id="motion">
 <div class="grid"><label>Flow law<select id="flow"><option value="cathedral">Vortex Cathedral</option><option value="beltrami">Beltrami Labyrinth</option><option value="countercurrent">Countercurrent Twins</option></select></label><label>Vortex strength <output id="speedText">1.0</output><input id="speed" type="range" min="0" max="2.4" step=".1" value="1"></label>
-<label>Fine turbulence <output id="turbulenceText">0.0</output><input id="turbulence" type="range" min="0" max="2" step=".1" value="0"></label>
+<label>Fine turbulence <output id="turbulenceText">0.6</output><input id="turbulence" type="range" min="0" max="2" step=".1" value=".6"></label>
 <label>Touch force <output id="forceText">1.0</output><input id="force" type="range" min=".2" max="3" step=".1" value="1"></label>
 <label>Brush radius <output id="brushText">0.22</output><input id="brush" type="range" min=".07" max=".5" step=".01" value=".22"></label>
 <label>Touch depth <output id="depthText">0.00</output><input id="depth" type="range" min="-.75" max=".75" step=".05" value="0"></label></div>
@@ -80,12 +145,17 @@ select{width:100%;max-width:100%;background:#241b32}
 <label>Background<select id="background"><option value="0">Void black</option><option value="1">Midnight blue</option><option value="2">Deep plum</option></select></label>
 <label>Optical density <output id="densityText">4.5</output><input id="density" type="range" min=".5" max="10" step=".5" value="4.5"></label>
 <label>Emission <output id="glowText">1.2</output><input id="glow" type="range" min=".1" max="3" step=".1" value="1.2"></label>
+<label>Wisp definition <output id="wispText">1.0</output><input id="wisp" type="range" min="0" max="2" step=".1" value="1"></label>
+<label>Prism depth <output id="prismText">0.8</output><input id="prism" type="range" min="0" max="2" step=".1" value=".8"></label>
 <label>Filament shine <output id="foldGlowText">1.3</output><input id="foldGlow" type="range" min="0" max="3" step=".1" value="1.3"></label>
 <label>Self-shadow <output id="shadowText">1.0</output><input id="shadow" type="range" min="0" max="4" step=".1" value="1"></label>
 <label>Light direction<select id="lightDirection"><option value="side">Side glow</option><option value="top">Overhead</option><option value="back">Backlight</option></select></label></div>
 <p class="help">A short light ray now samples density within the volume (1/2/4 light taps depending on Quality) for more layered internal shadowing. Not a multiple-scattering solver. Starter palettes are bundled here. The full MATHEMAGICAL palette vault will be wired in after its canonical source is imported—no invented claim that all your palettes are already present.</p>
 </section>
-<p class="note">No hosting deployment or paid service required. WebGL2 is required for the volume view. PNG exports the current camera view; animated GIF/MP4 are later milestones.</p>
+<p class="note">Full-screen canvas, cover-framed 3D atmosphere. Pinch to zoom or use the +/− buttons; tap Fill view to return. WebGL2 is required. PNG saves the current camera view; animated GIF/MP4 remain planned.</p>
+</div>
+</aside>
+<button id="returnUI" type="button" aria-label="Restore artwork controls" title="Show controls" hidden>⚙ Controls</button>
 </main>
 <script type="module" src="./src/main.js"></script>
 </body></html>

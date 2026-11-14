@@ -15,13 +15,26 @@ const palettes={
 function rgb(h){return [1,3,5].map(i=>parseInt(h.slice(i,i+2),16)/255);}
 const paletteSelect=$("palette");for(const name of Object.keys(palettes)){const o=document.createElement("option");o.value=name;o.textContent=name;paletteSelect.append(o);}
 const canvas=$("art"),field=new PigmentField(1226);
+field.turbulence=.6; // Begin with visible multiscale advection, not a static specimen.
 let engine=field,engineMode="CPU";
 let renderer,paused=false,mode="stir",active=null,lastFrame=0,lastDraw=0,accumulator=0;
-const camera={azimuth:.62,elevation:.23,distance:3.25};
-const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,shadow:1,lightDirection:"side",lightSteps:2,foldGlow:1.3,memoryView:0,steps:50,background:[0.009,.006,.023]};
+const IMMERSIVE_DISTANCE=1.95;
+const camera={azimuth:.62,elevation:.23,distance:IMMERSIVE_DISTANCE};
+const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,shadow:1,lightDirection:"side",lightSteps:2,foldGlow:1.3,memoryView:0,wisp:1,prism:.8,steps:50,background:[0.009,.006,.023]};
 const directions={side:[.75,.45,.4],top:[.2,1,.2],back:[-.6,.23,-.75]};
 const undo=[],redo=[];
 const foldEditDrafts=new Map();
+const touches=new Map();
+let pinchSpan=0;
+const limitZoom=d=>Math.max(1.22,Math.min(5.6,d));
+function setZoom(distance,announce=true){
+  camera.distance=limitZoom(distance);
+  if(announce)status("Camera distance "+camera.distance.toFixed(2)+" · pinch, +/−, or Fill view");
+}
+function touchSpan(){
+  const points=[...touches.values()];
+  return points.length<2?0:Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);
+}
 const status=text=>$("status").textContent=text;
 function releaseCommands(commands){for(const cmd of commands){engine.release?.(cmd.before);engine.release?.(cmd.after);}}
 function clearHistory(){
@@ -41,7 +54,7 @@ function redoStroke(){if(!redo.length)return;const cmd=redo.pop();undo.push(cmd)
 function params(){const p=palettes[paletteSelect.value]||palettes["Prismatic Riot"];return p.map(rgb);}
 function draw(){
   if(!renderer)return;const bg=[options.background,[.012,.018,.065],[.042,.008,.05]][Number($("background").value)];
-  renderer.draw(camera,params(),{gain:options.gain,glow:options.glow,steps:options.steps,background:bg,lightDir:directions[options.lightDirection],shadow:options.shadow,lightSteps:options.lightSteps,foldGlow:options.foldGlow,memoryView:options.memoryView});
+  renderer.draw(camera,params(),{gain:options.gain,glow:options.glow,steps:options.steps,background:bg,lightDir:directions[options.lightDirection],shadow:options.shadow,lightSteps:options.lightSteps,foldGlow:options.foldGlow,memoryView:options.memoryView,wisp:options.wisp,prism:options.prism});
 }
 function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera"}[mode];}
 for(const b of document.querySelectorAll(".mode"))b.addEventListener("click",()=>setMode(b.dataset.mode));
@@ -49,7 +62,7 @@ for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>
   for(const t of document.querySelectorAll(".tab"))t.setAttribute("aria-pressed",String(t===b));
   for(const p of document.querySelectorAll(".panel"))p.classList.toggle("open",p.id===b.dataset.panel);
 });
-for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence","foldGlow","foldWrite","foldPersistence","foldGrip"]){
+for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence","foldGlow","foldWrite","foldPersistence","foldGrip","wisp","prism"]){
   $(id).addEventListener("input",()=>{
     if(["foldWrite","foldPersistence","foldGrip"].includes(id)&&!foldEditDrafts.has(id)){
       foldEditDrafts.set(id,engine.snapshot());
@@ -93,6 +106,24 @@ $("flow").addEventListener("change",()=>{
 });
 $("genesis").addEventListener("change",()=>status("Genesis queued: "+$("genesis").selectedOptions[0].textContent+" · current artwork preserved"));
 $("background").addEventListener("change",draw);paletteSelect.addEventListener("change",draw);
+$("controlsToggle").addEventListener("click",()=>{
+  const panel=$("dockDetails"),opening=panel.hidden;
+  panel.hidden=!opening;
+  $("controlsToggle").setAttribute("aria-expanded",String(opening));
+  $("controlsToggle").textContent=opening?"✕ Hide controls":"⚙ Controls";
+});
+$("zoomIn").addEventListener("click",()=>setZoom(camera.distance/1.22));
+$("zoomOut").addEventListener("click",()=>setZoom(camera.distance*1.22));
+$("fitView").addEventListener("click",()=>setZoom(IMMERSIVE_DISTANCE));
+function artOnly(enabled){
+  document.body.classList.toggle("art-only",enabled);
+  $("returnUI").hidden=!enabled;
+}
+$("artOnly").addEventListener("click",()=>artOnly(true));
+$("returnUI").addEventListener("click",()=>artOnly(false));
+canvas.addEventListener("wheel",event=>{
+  event.preventDefault();setZoom(camera.distance*Math.exp(event.deltaY*.0012),false);
+},{passive:false});
 $("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Play":"Ⅱ Pause";status(paused?"Simulation paused":"Simulation resumed");});
 $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click",redoStroke);
 $("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
@@ -102,8 +133,17 @@ for(const id of ["foldWrite","foldPersistence","foldGrip"])field[id]=engine[id];
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
 document.addEventListener("keydown",event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redoStroke();else undoStroke();}});
 canvas.addEventListener("pointerdown",event=>{
-  if(active)return;if(event.button!==0&&event.pointerType==="mouse")return;
+  if(event.button!==0&&event.pointerType==="mouse")return;
   event.preventDefault();try{canvas.setPointerCapture(event.pointerId);}catch{}
+  if(event.pointerType==="touch"){
+    touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(touches.size>1){
+      // A second finger cancels any pending paint stroke before zooming.
+      if(active?.before){restore(active.before);engine.release?.(active.before);}
+      active=null;pinchSpan=touchSpan();return;
+    }
+  }
+  if(active)return;
   active={id:event.pointerId,x:event.clientX,y:event.clientY,mode,before:mode==="orbit"?null:engine.snapshot(),changed:false};
   if(mode==="inject"){
     const p=pointFromScreen(canvas,camera,event,options.depth).point;
@@ -111,6 +151,14 @@ canvas.addEventListener("pointerdown",event=>{
   }
 });
 canvas.addEventListener("pointermove",event=>{
+  if(touches.has(event.pointerId)){
+    touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
+    if(touches.size>=2){
+      const span=touchSpan();
+      if(pinchSpan>0&&span>2)setZoom(camera.distance*pinchSpan/span,false);
+      pinchSpan=span;return;
+    }
+  }
   if(!active||active.id!==event.pointerId)return;
   const rect=canvas.getBoundingClientRect();
   const dx=(event.clientX-active.x)/Math.max(1,rect.width),dy=(event.clientY-active.y)/Math.max(1,rect.height);
@@ -130,6 +178,8 @@ canvas.addEventListener("pointermove",event=>{
   }
 });
 function completePointer(event,cancelled){
+  if(touches.has(event.pointerId))touches.delete(event.pointerId);
+  if(touches.size<2)pinchSpan=0;
   if(!active||active.id!==event.pointerId)return;
   if(active.before){
     if(cancelled){restore(active.before);engine.release?.(active.before);status("Touch cancelled; pigment checkpoint restored");}
@@ -141,7 +191,7 @@ function completePointer(event,cancelled){
 canvas.addEventListener("pointerup",e=>completePointer(e,false));
 canvas.addEventListener("pointercancel",e=>completePointer(e,true));
 canvas.addEventListener("lostpointercapture",e=>completePointer(e,true));
-window.addEventListener("blur",()=>{if(active){if(active.before){restore(active.before);engine.release?.(active.before);}active=null;}});
+window.addEventListener("blur",()=>{touches.clear();pinchSpan=0;if(active){if(active.before){restore(active.before);engine.release?.(active.before);}active=null;}});
 document.addEventListener("visibilitychange",()=>{lastFrame=0;accumulator=0;});
 canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();paused=true;status("GPU context lost. Reload to restore the volume.");});
 function frame(timestamp){
@@ -162,7 +212,9 @@ try{
   try{engine=new GPUPigmentTransport(renderer,field);engineMode="GPU";}
   catch(gpuError){engine=field;engineMode="CPU";console.warn("GPU transport unavailable; CPU fallback",gpuError);}
   paletteSelect.value="Prismatic Riot";
+  $("turbulence").value=field.turbulence;
+  $("turbulenceText").textContent=field.turbulence.toFixed(1);
   $("engineBadge").textContent=engineMode+" transport";
-  status(engineMode+" volume ready · "+engine.morphology+" · seed "+engine.seed+" · drag to stir");
+  status(engineMode+" immersive volume ready · pinch to zoom, tap Controls for settings");
   requestAnimationFrame(frame);
 }catch(err){status("Cannot start volume: "+err.message);console.error(err);}
