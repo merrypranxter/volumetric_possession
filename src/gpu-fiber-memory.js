@@ -32,8 +32,8 @@ export class GPUFiberMemory{
   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
   if(!ready)throw Error("GPU fiber layer framebuffer unavailable");
   this.loc={};
-  for(const name of ["uPrev","uFiberPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uIntegrator","uFoldGrip","uFiberGuidance","uFiberGrowth","uFiberBend","uFiberPersistence","uImpulseCount","uImpulsePos","uImpulseVel","uSculptCount","uSculptPos","uSculptInfo"]){
-   this.loc[name]=gl.getUniformLocation(program,["uImpulsePos","uImpulseVel","uSculptPos","uSculptInfo"].includes(name)?name+"[0]":name);
+  for(const name of ["uPrev","uFiberPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uIntegrator","uFoldGrip","uFiberGuidance","uFiberGrowth","uFiberBend","uFiberPersistence","uImpulseCount","uImpulsePos","uImpulseVel","uSculptCount","uSculptPos","uSculptInfo","uCurveCount","uCurvePoints","uCurveInfo"]){
+   this.loc[name]=gl.getUniformLocation(program,["uImpulsePos","uImpulseVel","uSculptPos","uSculptInfo","uCurvePoints","uCurveInfo"].includes(name)?name+"[0]":name);
   }
  }
  step(c){
@@ -60,6 +60,16 @@ export class GPUFiberMemory{
   }
   gl.uniform1i(U.uSculptCount,m);
   gl.uniform4fv(U.uSculptPos,sp);gl.uniform4fv(U.uSculptInfo,si);
+  const cp=new Float32Array(64),ci=new Float32Array(8);
+  const curves=c.flowCurves||[],nc=Math.min(2,curves.length);
+  for(let i=0;i<nc;i++){
+    const curve=curves[i];
+    ci.set([curve.points.length,({stream:0,coil:1,gather:2})[curve.type]??0,curve.strength,curve.r],i*4);
+    for(let j=0;j<Math.min(8,curve.points.length);j++)
+      cp.set([...curve.points[j],0],i*32+j*4);
+  }
+  gl.uniform1i(U.uCurveCount,nc);
+  gl.uniform4fv(U.uCurvePoints,cp);gl.uniform4fv(U.uCurveInfo,ci);
   gl.bindFramebuffer(gl.FRAMEBUFFER,this.fbo);gl.viewport(0,0,N,N);
   for(let z=0;z<N;z++){
     gl.framebufferTextureLayer(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,this.back,0,z);
