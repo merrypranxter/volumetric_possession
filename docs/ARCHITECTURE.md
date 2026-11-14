@@ -81,3 +81,24 @@ An actual local 3D deformation-gradient or advected fiber-orientation tensor is 
 
 ### QA status
 Simulation arithmetic, finite values, zero-write baseline, positive accumulated memory, pigment response to Fold Grip, deterministic repeats, bytes and checkpoint restore are testable without WebGL. GPU shader uniform and GLSL source contract tests protect integration but **do not verify live shader compilation, rendered pixels or Safari performance**. No merge or production deploy requested.
+
+## Phase 01F — Immersive Atmosphere: occupy the screen
+**User feedback:** the volume looked like a small object trapped in a cube, with controls living below a framed square.
+
+### Layout and camera changes
+- The canvas and its frame are now `position:fixed; inset:0; width/height:100%`, with no square aspect ratio, border or clipped specimen window; `100dvh` follows the mobile visual viewport.
+- HUD labels are legible over the image; a bottom glass dock keeps Stir/Inject/Orbit accessible. `Controls` expands/collapses the rest of the settings. Art Only hides the header, dock and gesture hint; a small restore pill always remains.
+- The default camera distance changes from 3.25 to 1.95 with a zoom range [1.22, 5.6]. Plus/minus, Fill view and two-finger pinch adjust the camera (without regenerating pigment). Desktop wheel zoom works too.
+- The projection uses **cover** instead of contain framing. For viewport aspect `a = width/height`, the ray's horizontal/vertical multipliers are `[min(1,a), min(1,1/a)]`. This preserves isotropic angular scale per physical pixel while cropping into the volume for unusually tall or wide displays; unlike an arbitrary XY stretch, it does **not distort 3D geometry**. The canvas pixel-size cap preserves exact CSS aspect via a single scale.
+- Raymarch density is smoothly attenuated as positions approach the six physical edges of the bounded volume so that its computational cube is not visibly a cube. This changes rendering only—not the underlying physical state or velocity boundary conditions.
+
+### Visual depth without pretending to create fluid
+- `Wisp definition` samples a local dye neighbor inside the 3D texture and accentuates existing pigment interfaces / fold memory optically. It costs at most one additional 3D sample per contributing raymarch step when enabled.
+- `Prism depth` uses 3D-position-dependent palette-channel rotation. This enriches spatial color layering and is not wavelength dispersion or spectral ray tracing.
+- Default fine turbulence rises to 0.6, which **does change the underlying transported dye state** through the existing divergence-free analytic microflow. The two new optical sliders only affect rendering.
+- Render resolution is constrained to 780 pixels on the long edge, at most 420k pixels, respecting CSS aspect and reducing work on mobile.
+
+### Reality checks
+- JS parse and UI ID/HTML nesting checked; numerical cover projection gives equal world-angular scale per physical screen pixel for mobile portrait and desktop landscape.
+- Small CPU ray-box/mass sampling of the initial seeded volume suggests the fraction of viewport rays hitting significant material increases on a 393x852 viewport from 24% (previous square-camera mapping) to ~58% (new cover/closer mapping); on a 874x402 view ~5% to ~65%. These are **approximate geometric occupancy estimates**, not screenshots, browser performance benchmarks, or a guarantee of the same visual impression.
+- Renderer shaders and pinch interaction still need actual iPhone Safari testing. The environment lacks live WebGL2 frame verification. If frame time suffers, disable Wisp definition and choose Mobile quality.
