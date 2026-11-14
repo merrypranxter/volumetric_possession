@@ -8,6 +8,7 @@ import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
 import {BREEDER_SLOTS,DEFAULT_BREED_SEED,captureCurveGenome,cloneCurveGenome,cloneBreederParents,breedCurveGenomes,nurseryStarters} from "./curve-breeder.js";
 import {GALLERY_LIMIT,GENE_STORAGE_KEY,cloneGeneGallery,cloneGeneSources,addGeneSpecimen,editGeneSpecimen,removeGeneSpecimen,genealogicalChain,serializeGeneBank,parseGeneBank} from "./gene-gallery.js";
 import {TRAIT_KEYS,TRAIT_LABELS,normalizeTraitLocks,breedWithTraitLocks} from "./trait-locks.js";
+import {SURGERY_OPERATIONS,SURGERY_LABELS,performGeneSurgery} from "./gene-surgery.js";
 import {GPUPigmentTransport} from "./gpu-transport.js";
 const $=id=>document.getElementById(id);
 const palettes={
@@ -37,6 +38,12 @@ function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower
 const touches=new Map();
 let selectedSculpt=-1,selectedCurve=-1,selectedHandle=-1,selectedGeneId=null;
 let previewChild=null,previewSignature=null;
+let surgeryCandidate=null,surgeryCandidateSignature=null;
+function invalidateSurgeryPreview(){
+  surgeryCandidate=null;surgeryCandidateSignature=null;
+  $("applySurgery").disabled=true;
+  $("surgeryReport").textContent="Preview needs refreshing · active material remains intact";
+}
 const traitSelectors={topology:"traitTopology",shape:"traitShape",force:"traitForce",
   material:"traitMaterial",motion:"traitMotion",dynamics:"traitDynamics"};
 function invalidateChildPreview(){
@@ -121,6 +128,8 @@ function curveSelectionUI(){
   }
   $("removeCurve").disabled=!c;
   $("clearCurves").disabled=curves.length===0;
+  $("previewSurgery").disabled=curves.length===0;
+  if(curves.length===0)invalidateSurgeryPreview();
   $("bakeLiving").disabled=curves.length===0||engine.livingMode==="still"||
       engine.livingAmount<=0||engine.livingRate<=0;
   $("livingStatus").textContent=engine.livingMode==="still"?
@@ -141,6 +150,7 @@ function updateGeneNursery(){
   $("previewGene").disabled=count<2;
   syncTraitControls();
   invalidateChildPreview();
+  invalidateSurgeryPreview();
   $("clearGeneParents").disabled=count===0;
   $("breedSeed").value=engine.breederSeed??DEFAULT_BREED_SEED;
 }
@@ -201,6 +211,12 @@ function renderGeneGallery(){
   if(selected){
     const chain=genealogicalChain(gallery,selected.id,4);
     const textLines=chain.map((n,i)=>"  ".repeat(n.depth)+(n.depth?"↳ ":"")+"G"+n.generation+" · "+n.label+" ("+n.id+")");
+    if(selected.surgery){
+      const op=selected.surgery;
+      textLines.push("  ✂ Surgery: "+(SURGERY_LABELS[op.operation]||op.operation)+
+        " · recipient strand "+(op.target+1)+" · donor "+op.sourceLabel+
+        (op.operation==="remove"?"":" · donor strand "+(op.donorStrand+1)));
+    }
     if(selected.inheritance&&Object.values(selected.inheritance).some(v=>v!=="Auto")){
       const receipt=TRAIT_KEYS.map(k=>selected.inheritance[k]&&selected.inheritance[k]!=="Auto"?
         TRAIT_LABELS[k]+" ← "+selected.inheritance[k]:null).filter(Boolean);
@@ -389,7 +405,7 @@ function clearHistory(){
 }
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
 function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();persistGeneBank();}
-function restore(s){engine.restore(s);syncBreedingField();updateGeneNursery();renderGeneGallery();persistGeneBank();curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
+function restore(s){engine.restore(s);invalidateSurgeryPreview();syncBreedingField();updateGeneNursery();renderGeneGallery();persistGeneBank();curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
 $("forgeMode").value=engine.forgeMode||"off";field.forgeMode=engine.forgeMode;
 $("livingMode").value=engine.livingMode||"still";field.livingMode=engine.livingMode;
 $("fiberEnabled").value=engine.fiberEnabled?"on":"off";field.fiberEnabled=engine.fiberEnabled;
@@ -655,6 +671,119 @@ $("breedChild").addEventListener("click",()=>{
     const child=generateChild(inputs);
     hatchOffspring(child,inputs.seed,inputs.mutation,inputs.dominance);
   }catch(error){status("Breeding failed: "+error.message);}
+});
+// Phase 01P: every preview is derived from the immutable current patient
+// and a captured or archived donor, never from a mutable GPU texture.
+function surgicalInputs(){
+  const recipient=captureCurveGenome(engine);
+  const operation=$("surgeryAction").value;
+  const target=Number($("surgeryTarget").value);
+  const donorStrand=Number($("surgeryDonorStrand").value);
+  if(!SURGERY_OPERATIONS.includes(operation))throw Error("Unknown operation");
+  let donor=null,sourceLabel="No donor",sourceRef=null;
+  if(operation!=="remove"){
+    const key=$("surgerySource").value;
+    if(key==="album"){
+      const entry=engine.geneGallery.find(g=>g.id===selectedGeneId);
+      if(!entry)throw Error("Select a saved album specimen using View tree");
+      donor=cloneCurveGenome(entry.genome);
+      sourceLabel=entry.label;
+      sourceRef={id:entry.id,label:entry.label};
+    }else{
+      const slot=Number(key);
+      if(!Number.isInteger(slot)||slot<0||slot>=BREEDER_SLOTS)
+        throw Error("Choose a parent donor A/B/C or an album specimen");
+      if(!engine.breederParents[slot])throw Error("Parent "+String.fromCharCode(65+slot)+" is empty");
+      donor=cloneCurveGenome(engine.breederParents[slot]);
+      sourceRef=engine.breederSources?.[slot]||null;
+      sourceLabel=sourceRef?.label||"Captured Parent "+String.fromCharCode(65+slot);
+    }
+  }
+  const params={operation,target,donorStrand};
+  const signature=JSON.stringify({recipient,donor,sourceRef,sourceLabel,selectedGeneId:
+    $("surgerySource").value==="album"?selectedGeneId:null,params});
+  return {recipient,donor,sourceRef,sourceLabel,params,signature};
+}
+function previewSurgicalGraft(){
+  const inputs=surgicalInputs(),result=performGeneSurgery(inputs.recipient,inputs.donor,inputs.params);
+  return {inputs,result};
+}
+function archiveAndApplySurgery(candidate){
+  const {inputs,result}=candidate;
+  // Album selection can point to the DONOR rather than the live patient.
+  // Identify an actual archived patient by exact genome equivalence, never
+  // falsely claim the currently selected donor was the patient's parent.
+  const matchesPatient=e=>JSON.stringify(e.genome)===JSON.stringify(inputs.recipient);
+  const chosen=engine.geneGallery.find(e=>e.id===selectedGeneId&&matchesPatient(e));
+  const exactPatient=chosen||[...engine.geneGallery].reverse().find(matchesPatient);
+  const originalRef=exactPatient?
+    {id:exactPatient.id,label:exactPatient.label}:null;
+  const refs=[];
+  if(originalRef)refs.push(originalRef);
+  else refs.push({id:null,label:"Edited / unarchived live sculpture"});
+  if(inputs.sourceRef?.id&&!refs.some(ref=>ref.id===inputs.sourceRef.id))
+    refs.push(inputs.sourceRef);
+  else if(inputs.params.operation!=="remove"&&!inputs.sourceRef?.id)
+    refs.push({id:null,label:inputs.sourceLabel});
+  // Archive creation happens BEFORE any material/velocity mutation.
+  const archived=addGeneSpecimen(engine.geneGallery,result.genome,{
+    sequence:engine.geneNextSequence,
+    parents:refs,
+    surgery:{operation:result.operation,target:result.target,donorStrand:result.donorStrand,
+      sourceLabel:inputs.sourceLabel},
+    label:"Grafted mutant "+engine.geneNextSequence
+  });
+  const before=engine.snapshot();
+  engine.geneGallery=archived.gallery;engine.geneNextSequence=archived.nextSequence;
+  selectedGeneId=archived.record.id;
+  engine.flowCurves=cloneFlowCurves(result.genome.curves);
+  engine.livingMode=result.genome.livingMode;
+  engine.livingRate=result.genome.livingRate;
+  engine.livingAmount=result.genome.livingAmount;
+  if(engine!==field){
+    field.flowCurves=cloneFlowCurves(engine.flowCurves);
+    field.livingMode=engine.livingMode;
+    field.livingRate=engine.livingRate;
+    field.livingAmount=engine.livingAmount;
+  }
+  selectedCurve=Math.max(0,Math.min(result.target,engine.flowCurves.length-1));
+  selectedHandle=-1;
+  $("livingMode").value=engine.livingMode;
+  for(const id of ["livingRate","livingAmount"]){
+    $(id).value=engine[id];$(id+"Text").textContent=Number(engine[id]).toFixed(2);
+  }
+  curveSelectionUI();snapshotCommand(before);setMode("curve");renderGeneGallery();
+  invalidateSurgeryPreview();
+  $("surgeryReport").textContent="✂ Applied · "+result.detail+
+    (result.notes.length?" · "+result.notes.join("; "):"")+
+    " · saved as "+archived.record.label+". Material memory preserved.";
+  status("Gene Surgery complete · new 3D force DNA archived without resetting pigment");
+}
+for(const id of ["surgerySource","surgeryAction","surgeryTarget","surgeryDonorStrand"]){
+  $(id).addEventListener("change",invalidateSurgeryPreview);
+}
+$("previewSurgery").addEventListener("click",()=>{
+  try{
+    const candidate=previewSurgicalGraft();
+    surgeryCandidate=candidate;surgeryCandidateSignature=candidate.inputs.signature;
+    albumPreview($("surgeryBefore"),candidate.inputs.recipient);
+    albumPreview($("surgeryAfter"),candidate.result.genome);
+    $("surgeryReport").textContent="👁 "+candidate.result.detail+
+      " · donor: "+candidate.inputs.sourceLabel+
+      (candidate.result.notes.length?" · "+candidate.result.notes.join("; "):"")+
+      " · simulation and artwork unchanged";
+    $("applySurgery").disabled=false;
+    status("Gene Surgery preview ready · no material changed");
+  }catch(error){invalidateSurgeryPreview();status("Surgery preview failed: "+error.message);}
+});
+$("applySurgery").addEventListener("click",()=>{
+  try{
+    const current=surgicalInputs();
+    if(!surgeryCandidate||surgeryCandidateSignature!==current.signature){
+      invalidateSurgeryPreview();status("Patient or donor changed; preview again before surgery");return;
+    }
+    archiveAndApplySurgery(surgeryCandidate);
+  }catch(error){status("Surgery blocked: "+error.message);}
 });
 $("clearGeneParents").addEventListener("click",()=>{
   if(!engine.breederParents.some(Boolean)||!confirm("Clear all three captured parents? Current art will remain."))return;

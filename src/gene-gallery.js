@@ -2,12 +2,17 @@
 // DNA archive. Contains NO volume textures, screenshots, or WebGL resources.
 import {cloneCurveGenome,cloneBreederParents} from "./curve-breeder.js";
 import {normalizeTraitLocks} from "./trait-locks.js";
+import {SURGERY_OPERATIONS} from "./gene-surgery.js";
 export const GALLERY_LIMIT=24;
 export const GENE_STORAGE_KEY="volumetric-possession-gene-album-v1";
 const idPattern=/^g[0-9a-z]+$/;
 const int=(v,min,max)=>Number.isInteger(v)&&v>=min&&v<=max;
 export const emptyGeneSources=()=>[null,null,null];
 const safeName=s=>String(s??"Unnamed mutant").trim().slice(0,48)||"Unnamed mutant";
+const cloneSurgery=s=>s&&typeof s==="object"&&SURGERY_OPERATIONS.includes(s.operation)?
+  {operation:s.operation,target:int(s.target,0,1)?s.target:0,
+   donorStrand:int(s.donorStrand,0,1)?s.donorStrand:0,
+   sourceLabel:safeName(s.sourceLabel||"Unknown donor")} : null;
 function saneId(id){return typeof id==="string"&&idPattern.test(id)&&id.length<=12?id:null;}
 function cloneRef(ref){
   if(!ref||typeof ref!=="object")return null;
@@ -21,6 +26,7 @@ function canonicalEntry(e){
     generation:int(e.generation,0,100000)?e.generation:0,
     favorite:!!e.favorite,seed:int(e.seed,0,0xffffffff)?e.seed:null,
     traitLocks:normalizeTraitLocks(e.traitLocks),
+    surgery:cloneSurgery(e.surgery),
     inheritance:e.inheritance&&typeof e.inheritance==="object"?Object.fromEntries(Object.entries(e.inheritance).filter(([k,v])=>["topology","shape","force","material","motion","dynamics"].includes(k)&&["Auto","A","B","C"].includes(v))):{},
     mutation:typeof e.mutation==="number"&&Number.isFinite(e.mutation)?
       Math.min(.5,Math.max(0,e.mutation)):null,
@@ -46,7 +52,8 @@ export function addGeneSpecimen(gallery,genome,options={}){
     list.find(x=>x.id===ref.id)?.generation??0)):0;
   const entry=canonicalEntry({id,label:options.label||("Mutant #"+sequence),
     genome,parents,generation,favorite:!!options.favorite,seed:options.seed,
-    mutation:options.mutation,traitLocks:options.traitLocks,inheritance:options.inheritance,sequence});
+    mutation:options.mutation,traitLocks:options.traitLocks,inheritance:options.inheritance,
+    surgery:options.surgery,sequence});
   if(list.length===GALLERY_LIMIT){
     const oldest=list.findIndex(e=>!e.favorite);
     if(oldest<0)throw Error("All 24 specimens are favorites; unstar one or delete a specimen");
