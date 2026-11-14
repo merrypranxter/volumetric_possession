@@ -14,6 +14,7 @@ import {twistForceCurve,twoFingerTransform,wrappedTurn} from "./gesture-twist.js
 import {cloneColorState,moveColorLens} from "./color-control.js";
 import {measureAuthoredWinding,projectWindingDefects} from "./flow-winding.js";
 import {closestScreenCurve,bendForceCurve} from "./elastic-strand.js";
+import {normalizeAfterlifeSettings,afterlifeEnabled,afterlifeColor,sampleAfterlifeSegment} from "./gesture-afterlife.js";
 const $=id=>document.getElementById(id);
 const palettes={
  "Prismatic Riot":["#ff36cb","#1df6eb","#ffe143"],
@@ -393,6 +394,31 @@ function touchSpan(){
   return points.length<2?0:Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);
 }
 const status=text=>$("status").textContent=text;
+// Preferences are separate from the actual RGBA volume and follow the current palette.
+function afterlifeSettings(){
+  return normalizeAfterlifeSettings({
+    target:$("afterlifeTarget").value,style:$("afterlifeStyle").value,
+    strength:Number($("afterlifeStrength").value),width:Number($("afterlifeWidth").value)
+  });
+}
+function gestureAfterlife(active,oldX,oldY,newX,newY){
+  const settings=afterlifeSettings();
+  if(!afterlifeEnabled(settings.target,active.mode)||settings.strength<=0)return;
+  const forward=cameraVectors(camera).forward;
+  const depth=active.curveTug?active.curveTug.world.reduce((s,v,i)=>s+v*forward[i],0):options.depth;
+  const from=pointFromScreen(canvas,camera,{clientX:oldX,clientY:oldY},depth).point;
+  const to=pointFromScreen(canvas,camera,{clientX:newX,clientY:newY},depth).point;
+  const state=active.afterlife;
+  const dabs=sampleAfterlifeSegment(state,from,to,settings.width*.55,12);
+  for(const dab of dabs){
+    engine.stampRGB(dab.point,settings.width,
+      afterlifeColor(settings.style,dab.travel,settings.strength));
+  }
+  if(dabs.length){
+    active.afterlifeDeposits+=dabs.length;
+    active.changed=true;
+  }
+}
 function syncColorState(){
   const grade=cloneColorState(engine.colorGrade);
   engine.colorGrade=grade;field.colorGrade=cloneColorState(grade);
@@ -469,6 +495,11 @@ function draw(){
 }
 function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera",sculpt:"SCULPT · tap to anchor / drag glowing handles",curve:"DRAW FLOW · tug locally, drag a handle, or twist/pinch the force",neon:"NEON LENS · drag light focus / pinch lens radius"}[mode];updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();}
 for(const b of document.querySelectorAll(".mode"))b.addEventListener("click",()=>setMode(b.dataset.mode));
+for(const [id,digits] of [["afterlifeStrength",1],["afterlifeWidth",3]]){
+  $(id).addEventListener("input",()=>{
+    $(id+"Text").textContent=Number($(id).value).toFixed(digits);
+  });
+}
 // Elastic gesture reach and tension are brush preferences, not new GPU passes.
 for(const [id,digits] of [["curveTugReach",2],["curveTugPower",1]]){
   $(id).addEventListener("input",()=>{$(id+"Text").textContent=Number($(id).value).toFixed(digits);});
@@ -1090,7 +1121,8 @@ canvas.addEventListener("pointerdown",event=>{
   if(pinchSuppressed||active)return;
   active={id:event.pointerId,x:event.clientX,y:event.clientY,mode,
     before:mode==="orbit"?null:engine.snapshot(),changed:false,sculptIndex:-1,
-    curveIndex:-1,curveMoving:false,curveRaw:null,curveHandle:-1,curveTug:null};
+    curveIndex:-1,curveMoving:false,curveRaw:null,curveHandle:-1,curveTug:null,
+    afterlife:{carry:0,travel:0},afterlifeDeposits:0};
   if(mode==="curve"){
     const handle=pickCurveHandle(event);
     if(handle>=0&&$("curveDragBehavior").value==="handle"){
@@ -1155,6 +1187,15 @@ canvas.addEventListener("pointerdown",event=>{
       canvas.getBoundingClientRect()));
     active.changed=true;
     status("Painted chroma focus · drag the lens across the artwork");
+  }
+  // One localized seed at the first Stir touch; movement paints distance-
+  // sampled splashes, not FPS-dependent buckets of dye.
+  const ink=afterlifeSettings();
+  if(mode==="stir"&&afterlifeEnabled(ink.target,mode)&&ink.strength>0){
+    const p=pointFromScreen(canvas,camera,event,options.depth).point;
+    engine.stampRGB(p,ink.width,afterlifeColor(ink.style,0,ink.strength));
+    active.afterlifeDeposits++;
+    active.changed=true;
   }
 });
 canvas.addEventListener("pointermove",event=>{
@@ -1264,6 +1305,7 @@ canvas.addEventListener("pointermove",event=>{
         }
       }
     }
+    if(active.changed)gestureAfterlife(active,oldX,oldY,event.clientX,event.clientY);
     curveSelectionUI();drawCurveOverlay();
     return;
   }
@@ -1286,6 +1328,8 @@ canvas.addEventListener("pointermove",event=>{
       engine.push(sample.point,velocity,options.brush);
     }
     active.changed=true;
+    if(currentMode==="stir"||currentMode==="sculpt")
+      gestureAfterlife(active,oldX,oldY,event.clientX,event.clientY);
   }
 });
 function completePointer(event,cancelled){
@@ -1314,6 +1358,7 @@ function completePointer(event,cancelled){
       if(engine!==field){
         if(active.mode==="inject")engine.flush(options.speed);
         else if(active.mode==="stir")engine.step(1/15,options.speed);
+        if(active.afterlifeDeposits)engine.flush(options.speed);
       }
       snapshotCommand(active.before);
     }
