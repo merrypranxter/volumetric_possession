@@ -135,7 +135,7 @@ body.art-only #colorLensMarker{display:none!important}
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / GESTURE AFTERLIFE 01S</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHANTOM ECHOES 01T</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div id="sculptMarkers" aria-hidden="true"></div><canvas id="curveOverlay" aria-hidden="true"></canvas><div id="colorLensMarker" hidden aria-hidden="true"></div><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -192,6 +192,27 @@ body.art-only #colorLensMarker{display:none!important}
 <input id="afterlifeWidth" type="range" min=".055" max=".28" step=".005" value=".115"></label>
 </div>
 <p class="help">Touch motions write actual pigment into the persistent 3D volume, then existing flow, fibers and folds stretch that color long after your hand leaves. Prism, Staccato, Aurora and Ghost select combinations of the current three palette colors—not hardcoded RGB overlays. Choose Off to keep your old Stir behavior. One stroke = one Undo. No additional 3D textures or simulation passes. To draw, select Stir and drag on the artwork.</p>
+<details class="subsystem" id="phantomEchoPanel">
+<summary>👻 Phantom Echoes — delayed moving offspring</summary>
+<div class="grid">
+<label>Echo motion<select id="echoMode">
+<option value="spiral" selected>🌀 Spiral descendants</option>
+<option value="fork">⚡ Forking siblings</option>
+<option value="orbit">🪐 Orbiting ghosts</option>
+<option value="off">Off · original touch trail only</option>
+</select></label>
+<label>Echo siblings<select id="echoCopies"><option value="2" selected>Two</option><option value="3">Three</option></select></label>
+<label>Birth delay <output id="echoDelayText">0.35</output>
+<input id="echoDelay" type="range" min=".1" max="1.5" step=".05" value=".35"></label>
+<label>Wandering <output id="echoDriftText">0.9</output>
+<input id="echoDrift" type="range" min=".1" max="2" step=".1" value=".9"></label>
+<label>Echo lifetime <output id="echoDurationText">1.25</output>
+<input id="echoDuration" type="range" min=".35" max="2.5" step=".05" value="1.25"></label>
+<label>Echo ink <output id="echoStrengthText">0.85</output>
+<input id="echoStrength" type="range" min="0" max="1.5" step=".05" value=".85"></label>
+</div>
+<p class="help">Every few centimeters of your primary gesture may hatch two or three delayed offspring. They wander independently through real 3D space, depositing palette-linked pigment while existing forces carry their residue away. At most 12 live descendants and 6 newborn dabs per simulation tick; your own brush always has priority. Undo restores both pigment and unhatched offspring; Restart clears them.</p>
+</details>
 </details>
 <details class="subsystem" id="sculptPanel" open>
 <summary>⟡ Flow Necromancer — persistent force anchors</summary>
