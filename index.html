@@ -135,7 +135,7 @@ body.art-only #colorLensMarker{display:none!important}
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / POSSESSED CANVAS 01Q</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / ELASTIC STRAND PUPPET 01R</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div id="sculptMarkers" aria-hidden="true"></div><canvas id="curveOverlay" aria-hidden="true"></canvas><div id="colorLensMarker" hidden aria-hidden="true"></div><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -194,15 +194,19 @@ body.art-only #colorLensMarker{display:none!important}
 <p class="help">Tap artwork in Sculpt mode to place a force, or drag a glowing handle to reposition it. Each anchor persists and alters the actual 3D pigment and fiber flow. Six maximum to keep iPhone performance sane. Undo/Redo saves positions and their effects; Restart and New Design clear placed anchors.</p>
 </details>
 <details class="subsystem" id="curvePanel" open>
-<summary>⌁ Curve Witch — draw entire 3D forces</summary>
+<summary>⌁ Curve Witch — puppet the actual 3D forces</summary>
+<p class="help">Grab a glowing strand between its control dots to bend the local force geometry; Reach controls how much of its length follows, Tension controls how hard it bends. Choose Translate to move the entire strand instead. Two fingers still twist and pinch the selected strand. All edits affect real pigment advection and save as one Undo step per gesture.</p>
 <div class="grid">
 <label>Stroke behavior<select id="curveType">
 <option value="stream">➝ Stream · carry along path</option>
 <option value="coil">🌀 Coil · twist around path</option>
 <option value="gather">◉ Gather · pull toward path</option>
 </select></label>
+<label>Grab behavior<select id="curveDragBehavior"><option value="tug" selected>✋ Elastic tug · bend nearby</option><option value="move">↔ Translate whole strand</option></select></label>
+<label>Elastic reach <output id="curveTugReachText">0.22</output><input id="curveTugReach" type="range" min=".07" max=".70" step=".01" value=".22"></label>
+<label>Elastic tension <output id="curveTugPowerText">1.0</output><input id="curveTugPower" type="range" min=".2" max="2.5" step=".1" value="1"></label>
 <label>Drawn curves <output id="curveCount">0 / 2</output><span class="muted">Two curves, eight control points each</span></label>
-<label>Selected handle <output id="curveHandleText">none</output><span class="muted">Tap any glowing dot to select; drag to bend</span></label>
+<label>Selected handle <output id="curveHandleText">none</output><span class="muted">Drag a dot for exact positioning; grab the strand itself for an elastic tug</span></label>
 <label>Curve intensity <output id="curveStrengthText">1.2</output>
 <input id="curveStrength" type="range" min=".1" max="2.4" step=".1" value="1.2"></label>
 <label>Influence width <output id="curveWidthText">0.27</output>
