@@ -8,7 +8,7 @@ const file=name=>readFileSync(resolve(root,name),"utf8");
 
 test("GPU transport shader has a runtime midpoint switch",()=>{
  const src=file("src/gpu-transport.js");
- assert.match(src,/uniform int uFlow,uImpulseCount,uStampCount,uIntegrator;/);
+ assert.match(src,/uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled;/);
  assert.match(src,/vec3 velocity\(vec3 p,float t\)/);
  assert.match(src,/v=velocity\(mid,uTime\+\.5\*uDt\)/);
  assert.match(src,/uniform1i\(U\.uIntegrator,this\.integration==="midpoint"\?1:0\)/);
@@ -16,7 +16,7 @@ test("GPU transport shader has a runtime midpoint switch",()=>{
 
 test("ray-march lighting uniform and limited light-ray loop are connected",()=>{
  const src=file("src/render.js");
- assert.match(src,/uniform int uSteps,uLightSteps;/);
+ assert.match(src,/uniform int uSteps,uLightSteps,uMemoryView;/);
  assert.match(src,/for\(int li=0;li<4;li\+\+\)/);
  assert.match(src,/uniform1i\(U\.uLightSteps,opts\.lightSteps\|\|1\)/);
  assert.match(src,/exp\(-uShadow\*opticalDepth\*\.68\)/);

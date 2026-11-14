@@ -9,7 +9,7 @@ const src=p=>readFileSync(resolve(root,p),"utf8");
 
 test("GPU shader carries historical memory in the RGBA8 alpha channel",()=>{
   const gpu=src("src/gpu-transport.js");
-  assert.match(gpu,/uniform float uFoldWrite,uFoldPersistence,uFoldGrip;/);
+  assert.match(gpu,/uniform float uFoldWrite,uFoldPersistence,uFoldGrip,uFiberGuidance;/);
   assert.match(gpu,/vec4 previous=texture\(uPrev,back\*\.5\+\.5\);/);
   assert.match(gpu,/previous\.a\*decay/);
   assert.match(gpu,/texelFetch\(uPrev,cell,0\)\.a/);

@@ -117,3 +117,39 @@ Phase = `(time + dt)*pace*.55 + seed*.000017`. The moving source loci are **not*
 The existing RGB channels inherit whichever palette is selected. Source parameters are saved with the simulation checkpoint for Undo/Redo and preserved across seeded Reset and New Design (which remove history intentionally). No extra GPU volume or rendering pass: the shader reuses the 28 z-layer transport fragment pass and exposes uForgeMode/Power/Width/Pace. There is an equivalent CPU fallback.
 
 **Limitations:** RGB8 volume and 28³ discretization cannot resolve extremely thin fibers; semi-Lagrangian advection diffuses detail. Sources are bounded, but not mass-conservative, not pressure-projected fluid physics, and not guaranteed periodic. Gyroid is an implicit approximate sheet, not meshed geometry. Tests evaluate deterministic numerical behavior, but live shader compilation and iPhone Safari rendering performance remain unverified. 
+
+## Phase 01H — Fiber Nerves / Directional Memory
+
+Each 28³ voxel now has TWO independent advected material states:
+1. Pigment RGBA8: R/G/B concentrations, A = previous Fold Memory scalar.
+2. Fiber RGBA8: RGB encodes a unit world-space director `d=(2rgb-1)/|2rgb-1|`, alpha encodes accumulated directional coherence `c ∈ [0,1]`. CPU keeps signed Float32Array tangent xyz and scalar c, GPU packs tangents into unsigned 8-bit channels. Initial coherence is zero; reset clears it.
+
+### Evolving physical-ish director transport
+At each step, the fiber volume is semi-Lagrangian advected along the same analytic flow and feedback-modified backtrace used by the pigment volume. A tangent starts approximately tangent to the previous pigment density interface, `d = normalize(grad(totalPigment) × v)`. If degenerate, a gradient-orthogonal fallback is used.
+
+Stored directors bend using the direction derivative of velocity, from a symmetric finite difference along the prior tangent:
+`Dv·d ≈ (v(x + .065 d) − v(x − .065 d))/(2*.065)`.
+`d' = normalize(d + dt * fiberBend * (Dv·d))`.
+`c' = clamp(c_advected * exp(-dt * (.045 + 1.2 * (1-fiberPersistence))) + dt * fiberGrowth * interfaceActivity * mass * (0.8 + 0.2*positiveStretch), 0,1)`.
+
+This is an **advected director field**, not a full tensor, mechanical elasticity simulation or complete physical vortex-stretching fluid. CPU uses newly advected dye for the activity mass, GPU samples previous dye; subtle numerical mismatch is expected. Spatial gradients and directions are approximate at 28³ and GPU orientations quantize to 8 bits.
+
+### Causal feedback, not just optics
+When evolution is On, coherence can project part of local dye velocity along a stored tangent:
+`v_new = mix(v_old, d * dot(v_old,d), min(.75,.55*fiberGuidance*c))`.
+This intentionally suppresses cross-strand transport, helping existing thin structures resist becoming undirected fog. It is **not divergence-free or mass-conservative**. Fold Grip runs before this guidance, and the resulting velocity is used for characteristic backtracing.
+
+Directional volumetric highlights use a cylindrical scattering proxy:
+`light = pow(1 − abs(dot(d, normalize(lightDir − viewRay))),6)`.
+The strength is controlled by Fiber Glints, multiplied by coherence; it modulates the existing physical RGB dye and fold shading instead of recoloring the whole screen with an unrelated texture. The **Fiber Alignment Map** diagnostic uses normalized `abs(d)` as an RGB direction key and coherence for density. Newly seeded volumes show almost no map until material history accumulates.
+
+### Resources / controls
+- **CPU:** `src/fiber-memory.js` float RGBA arrays, checkpointed and packed to bytes on upload. CPU computes extra analytic velocities, so devices in fallback mode may run slowly.
+- **GPU:** `src/gpu-fiber-memory.js` shares the exact velocity GLSL preface from pigment shader, owns second 3D ping-pong state and a separate FBO. It reads previous dye and previous fiber states, then atomically swaps its own volume after completing 28 z-layer writes. This adds 28 draws per active simulation step (56 total, compared with 28 before). The memory itself is **not transferred through readPixels**. Undo checkpoints now save both volumes and both state parameter groups; GPU snapshot copying adds 28 layers per volume. Memory footprint grows accordingly.
+- **Substance → Fiber Nerves:** Evolution On/Off, Strand Formation, Persistence, Bending, Guidance; plus Inspect substance → Fiber Alignment Map.
+- **Light + Color:** Fiber Glints. Turning evolution Off freezes the previously stored directions and skips the second GPU update pass, while directional lighting can still read that frozen state. Source-family and fiber parameters persist through Restart/New Design; actual history resets.
+
+### QA and limitations
+- CPU checks: deterministic seeded director evolution, finite bounds, no coherence on reset, positive coherence after time steps, RGB changes under guidance vs guidance zero, exact freeze, exact snapshot restoration.
+- Mocked GPU checks: 28 dye + 28 fiber slice draws per step, shader uniform propagation and controls, double-volume checkpoint/restore, disabled fiber pass, 2 reset texture uploads and zero readPixels.
+- Full live WebGL2 shader compilation, Safari frame rate, and visual aesthetics **not verified by the mock**. If mobile performance suffers, toggle Fiber Evolution Off and reduce render quality. High fidelity stretch will require more resolution and physically richer deformation machinery.

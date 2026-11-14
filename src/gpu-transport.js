@@ -1,16 +1,18 @@
 // Persistent 3D GPU dye advection through analytic vortices.
 // Uses WebGL2 texture-layer rendering. Not pressure-projected Navier-Stokes.
 import {N} from "./field.js";
+import {GPUFiberMemory} from "./gpu-fiber-memory.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
 const FS=`#version 300 es
 precision highp float;
 precision highp sampler3D;
-uniform sampler3D uPrev;
+uniform sampler3D uPrev,uFiberPrev;
 uniform float uLayer,uDim,uTime,uDt,uSpeed,uSeedPhase,uTurb;
-uniform float uFoldWrite,uFoldPersistence,uFoldGrip;
-uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode;
+uniform float uFoldWrite,uFoldPersistence,uFoldGrip,uFiberGuidance;
+uniform float uFiberGrowth,uFiberBend,uFiberPersistence; // shared header for director pass
+uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled;
 uniform float uForgePower,uForgeWidth,uForgePace;
 uniform vec4 uImpulsePos[8],uImpulseVel[8],uStampPos[16],uStampColor[16];
 out vec4 fragColor;
@@ -96,6 +98,14 @@ void main(){
  // Fold memory from the previous material affects the next transport velocity.
  float oldLocalMemory=texelFetch(uPrev,cell,0).a;
  v*=1.0-.35*uFoldGrip*oldLocalMemory;
+ if(uFiberEnabled==1&&uFiberGuidance>0.0){
+   vec4 fiber=texelFetch(uFiberPrev,cell,0);
+   if(fiber.a>.001){
+     vec3 axis=normalize(fiber.rgb*2.0-1.0+vec3(.00001));
+     float guide=clamp(.55*uFiberGuidance*fiber.a,0.0,.75);
+     v=mix(v,axis*dot(v,axis),guide);
+   }
+ }
  vec3 back=clamp(pos-v*uDt,vec3(-1),vec3(1));
  vec4 previous=texture(uPrev,back*.5+.5);
  vec3 dye=previous.rgb*exp(-.019*uDt);
@@ -154,15 +164,22 @@ export class GPUPigmentTransport{
    gl.deleteShader(v);gl.deleteShader(f);
    if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error("GPU transport link: "+gl.getProgramInfoLog(p));
    this.program=p;this.vao=gl.createVertexArray();this.loc={};
-   const names=["uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uForgeMode","uForgePower","uForgeWidth","uForgePace","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
+   const names=["uFiberPrev","uFiberEnabled","uFiberGuidance","uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uForgeMode","uForgePower","uForgeWidth","uForgePace","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
    for(const n of names)this.loc[n]=gl.getUniformLocation(p,n);
    for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
    this.time=source.time;this.seed=source.seed;this.morphology=source.morphology;this.flow=source.flow;
    this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
    this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
+   this.fiberGrowth=source.fiberGrowth??2.3;this.fiberPersistence=source.fiberPersistence??.88;
+   this.fiberBend=source.fiberBend??1;this.fiberGuidance=source.fiberGuidance??.65;
+   this.fiberEnabled=source.fiberEnabled??true;
+   this.fiberGrowth=source.fiberGrowth??2.3;this.fiberPersistence=source.fiberPersistence??.88;
+   this.fiberBend=source.fiberBend??1;this.fiberGuidance=source.fiberGuidance??.65;
+   this.fiberEnabled=source.fiberEnabled??true;
    this.forgeMode=source.forgeMode??"rosette";this.forgePower=source.forgePower??.75;
    this.forgeWidth=source.forgeWidth??.17;this.forgePace=source.forgePace??.65;
    this.impulses=[];this.pending=[];
+   this.fibers=new GPUFiberMemory(renderer,VS,FS);
    renderer.externalSource=true;renderer.texture=this.front;
  }
  stamp(p,r,channel,amount=.38){
@@ -175,7 +192,11 @@ export class GPUPigmentTransport{
    const gl=this.gl,U=this.loc;
    gl.useProgram(this.program);gl.bindVertexArray(this.vao);
    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,this.front);
-   gl.uniform1i(U.uPrev,1);gl.uniform1f(U.uTime,this.time);gl.uniform1f(U.uDt,dt);
+   gl.uniform1i(U.uPrev,1);
+   gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_3D,this.fibers.front);
+   gl.uniform1i(U.uFiberPrev,2);gl.uniform1i(U.uFiberEnabled,this.fiberEnabled?1:0);
+   gl.uniform1f(U.uFiberGuidance,this.fiberGuidance);
+   gl.uniform1f(U.uTime,this.time);gl.uniform1f(U.uDt,dt);
    gl.uniform1f(U.uSpeed,speed);gl.uniform1f(U.uDim,N);gl.uniform1f(U.uSeedPhase,this.seed*.000017);
    gl.uniform1f(U.uTurb,this.turbulence);gl.uniform1i(U.uFlow,FLOW[this.flow]??0);
    gl.uniform1i(U.uIntegrator,this.integration==="midpoint"?1:0);
@@ -195,8 +216,17 @@ export class GPUPigmentTransport{
      gl.uniform1f(U.uLayer,z);gl.drawArrays(gl.TRIANGLES,0,3);
    }
    const error=gl.getError();gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+   gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_3D,null);
    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,null);gl.activeTexture(gl.TEXTURE0);
    if(error!==gl.NO_ERROR)throw Error("GPU transport failure: "+error);
+   // Both passes read the PREVIOUS textures and only then swap to next state.
+   if(dt>0&&this.fiberEnabled)this.fibers.step({
+     dye:this.front,time:this.time,dt,speed,seed:this.seed,
+     flow:this.flow,turbulence:this.turbulence,integration:this.integration,
+     foldGrip:this.foldGrip,fiberGrowth:this.fiberGrowth,
+     fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
+     fiberGuidance:this.fiberGuidance,impulses:this.impulses
+   });
    [this.front,this.back]=[this.back,this.front];this.renderer.texture=this.front;
    this.time+=dt;this.pending.splice(0,count);
    this.impulses=this.impulses.filter(s=>(s.ttl-=dt)>0);
@@ -214,21 +244,33 @@ export class GPUPigmentTransport{
  }
  snapshot(){
    const texture=volume(this.gl);this.copyVolume(this.front,texture);
-   return {kind:"gpu",texture,time:this.time,seed:this.seed,flow:this.flow,morphology:this.morphology,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace};
+   const fiberTexture=this.fibers.snapshot();
+   return {kind:"gpu",texture,fiberTexture,time:this.time,seed:this.seed,flow:this.flow,
+     morphology:this.morphology,turbulence:this.turbulence,integration:this.integration,
+     foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,
+     forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,
+     fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,
+     fiberBend:this.fiberBend,fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
-   this.copyVolume(s.texture,this.front);this.time=s.time;this.seed=s.seed;
+   this.copyVolume(s.texture,this.front);
+   if(s.fiberTexture)this.fibers.restore(s.fiberTexture);
+   this.time=s.time;this.seed=s.seed;
    this.flow=s.flow;this.morphology=s.morphology;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
    this.foldPersistence=s.foldPersistence??.80;this.foldGrip=s.foldGrip??.35;
+   this.fiberGrowth=s.fiberGrowth??2.3;this.fiberPersistence=s.fiberPersistence??.88;
+   this.fiberBend=s.fiberBend??1;this.fiberGuidance=s.fiberGuidance??.65;
+   this.fiberEnabled=s.fiberEnabled??true;
    this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
    this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
- release(s){if(s?.kind==="gpu"&&s.texture)this.gl.deleteTexture(s.texture);}
+ release(s){if(s?.kind==="gpu"){if(s.texture)this.gl.deleteTexture(s.texture);this.fibers.release(s.fiberTexture);}}
  reset(source){
    const gl=this.gl;gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.front);
    gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,N,N,N,gl.RGBA,gl.UNSIGNED_BYTE,source.pack());
+   this.fibers.reset(source);
    this.time=source.time;this.seed=source.seed;this.flow=source.flow;this.morphology=source.morphology;
    this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
    this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;

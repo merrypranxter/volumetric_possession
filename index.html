@@ -86,6 +86,9 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
   .dock .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 9px}
   .dock .tab{padding:10px 9px}
 }
+.subsystem{margin:12px 0 8px;border:1px solid #5d4078;border-radius:12px;padding:10px;background:#1d142b}
+.subsystem summary{font-size:12px;font-weight:800;color:#f1bbff;cursor:pointer;padding:4px 0 10px}
+.subsystem .help{margin-bottom:0}
 @media(max-height:490px){header{padding-top:7px}header h1{font-size:18px}
   .overlay{top:60px}#dockDetails{max-height:56dvh}}
 
@@ -93,7 +96,7 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / FILAMENT FORGE 01G</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / FIBER NERVES 01H</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -145,7 +148,25 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 <label>Fold formation <output id="foldWriteText">1.4</output><input id="foldWrite" type="range" min="0" max="4" step=".1" value="1.4"></label>
 <label>Fold persistence <output id="foldPersistenceText">0.80</output><input id="foldPersistence" type="range" min="0" max="1" step=".05" value=".8"></label>
 <label>Fold grip <output id="foldGripText">0.35</output><input id="foldGrip" type="range" min="0" max="1" step=".05" value=".35"></label>
-<label>Inspect substance<select id="memoryView"><option value="0">Colored pigment</option><option value="1">Fold-memory map</option></select></label></div>
+<label>Inspect substance<select id="memoryView"><option value="0">Colored pigment</option><option value="1">Fold-memory map</option><option value="2">Fiber alignment map</option></select></label></div>
+<details class="subsystem" open>
+<summary>✳ Fiber Nerves — directional material memory</summary>
+<div class="grid">
+<label>Fiber evolution<select id="fiberEnabled">
+<option value="on" selected>On — grow and guide strands</option>
+<option value="off">Off — freeze stored directions</option>
+</select></label>
+<label>Strand formation <output id="fiberGrowthText">2.3</output>
+<input id="fiberGrowth" type="range" min="0" max="4" step=".1" value="2.3"></label>
+<label>Strand persistence <output id="fiberPersistenceText">0.88</output>
+<input id="fiberPersistence" type="range" min="0" max="1" step=".02" value=".88"></label>
+<label>Strand bending <output id="fiberBendText">1.0</output>
+<input id="fiberBend" type="range" min="0" max="2" step=".1" value="1"></label>
+<label>Strand guidance <output id="fiberGuidanceText">0.65</output>
+<input id="fiberGuidance" type="range" min="0" max="1" step=".05" value=".65"></label>
+</div>
+<p class="help">Each voxel remembers a 3D strand direction and confidence. Flow shear bends those directions; accumulated coherence can resist cross-strand pigment transport. Turn this off on slower devices to avoid an extra 3D simulation pass; the existing directional memory remains available for lighting.</p>
+</details>
 <p class="help"><strong>FILAMENT FORGE:</strong> Choose an evolving source architecture. Three colored 3D manifolds inject pigment into the live flow; source motion shifts the source itself while vortex advection bends its trails. Switching source or turning it off never erases existing dye. Growth is capped and thickness is measured in volume-world units, not screen pixels.</p>
 <p class="help"><strong>Material memory:</strong> Dye interfaces write an advected fourth field that persists as folds age. Fold grip makes old folds move slightly differently; memory-map view reveals the stored history. This is an art-directed interface-memory model, not an elastic-fluid strain tensor.</p>
 <p class="help"><strong>Genesis does not change the current design.</strong> Choose a starting structure, then press New Design and confirm. Restart seed restores the current structure. Volume: 28 × 28 × 28 evolving cells. Semi-Lagrangian backtracing keeps evolving pigment history. Curved tracing follows bent flow trajectories more faithfully (with extra computation), but does not eliminate numerical diffusion. This is an artistic transport model, not a full pressure-projected Navier–Stokes solver.</p>
@@ -157,6 +178,7 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 <label>Emission <output id="glowText">1.2</output><input id="glow" type="range" min=".1" max="3" step=".1" value="1.2"></label>
 <label>Wisp definition <output id="wispText">1.0</output><input id="wisp" type="range" min="0" max="2" step=".1" value="1"></label>
 <label>Prism depth <output id="prismText">0.8</output><input id="prism" type="range" min="0" max="2" step=".1" value=".8"></label>
+<label>Fiber glints <output id="fiberLightText">1.5</output><input id="fiberLight" type="range" min="0" max="3" step=".1" value="1.5"></label>
 <label>Filament shine <output id="foldGlowText">1.3</output><input id="foldGlow" type="range" min="0" max="3" step=".1" value="1.3"></label>
 <label>Self-shadow <output id="shadowText">1.0</output><input id="shadow" type="range" min="0" max="4" step=".1" value="1"></label>
 <label>Light direction<select id="lightDirection"><option value="side">Side glow</option><option value="top">Overhead</option><option value="back">Backlight</option></select></label></div>

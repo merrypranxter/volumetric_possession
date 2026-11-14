@@ -1,4 +1,5 @@
 import {forgeAt,forgePhase,FORGE_MODES} from "./filament-forge.js";
+import {FiberMemory} from "./fiber-memory.js";
 // Persistent CPU 3D dye field. The analytic vortices are divergence-free individually.
 // Semi-Lagrangian transport is approximate and dissipative, not a Navier-Stokes solver.
 export const N = 28;
@@ -11,6 +12,8 @@ export class PigmentField {
     this.a=new Float32Array(N*N*N*4);this.b=new Float32Array(this.a.length);
     this.bytes=new Uint8Array(this.a.length);this.impulses=[];this.turbulence=0;this.integration="euler";
     this.foldWrite=1.4;this.foldPersistence=.80;this.foldGrip=.35;
+    this.fibers=new FiberMemory(N);this.fiberGrowth=2.3;this.fiberPersistence=.88;
+    this.fiberBend=1;this.fiberGuidance=.65;this.fiberEnabled=true;
     this.forgeMode="rosette";this.forgePower=.75;this.forgeWidth=.17;this.forgePace=.65;
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
@@ -18,6 +21,7 @@ export class PigmentField {
     const valid=["cathedral","gyroid","trefoil","braid"];
     if(!valid.includes(morphology))throw Error("Unknown genesis morphology: "+morphology);
     this.seed=seed>>>0;this.morphology=morphology;this.time=0;this.impulses.length=0;
+    this.fibers.reset();
     const rng=random(this.seed),sx=rng()*.32-.16,sy=rng()*.22-.11,sz=rng()*.30-.15;
     // Pre-sample the closed trefoil core, so genesis is deterministic and inexpensive.
     const knot=[];
@@ -66,11 +70,16 @@ export class PigmentField {
     }
     this.dirty=true;
   }
-  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
+  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,
+    fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
+    fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,fibers:this.fibers.snapshot(),forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
     this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
     this.foldPersistence=s.foldPersistence??.80;this.foldGrip=s.foldGrip??.35;
+    this.fiberGrowth=s.fiberGrowth??2.3;this.fiberPersistence=s.fiberPersistence??.88;
+    this.fiberBend=s.fiberBend??1;this.fiberGuidance=s.fiberGuidance??.65;
+    this.fiberEnabled=s.fiberEnabled??true;this.fibers.restore(s.fibers);
     this.forgeMode=FORGE_MODES.includes(s.forgeMode)?s.forgeMode:"rosette";
     this.forgePower=s.forgePower??.75;this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
     this.a.set(s.values);this.impulses.length=0;this.dirty=true;
@@ -147,6 +156,19 @@ export class PigmentField {
       // Older folds become fractionally resistant to advection (art-directed, not incompressible).
       const grip=1-.35*this.foldGrip*a[i+3];
       v[0]*=grip;v[1]*=grip;v[2]*=grip;
+      if(this.fiberEnabled&&this.fiberGuidance>0){
+        const c=this.fibers.a[i+3];
+        if(c>.001){
+          const dx=this.fibers.a[i],dy=this.fibers.a[i+1],dz=this.fibers.a[i+2];
+          const len=Math.hypot(dx,dy,dz)||1;
+          const ax=dx/len,ay=dy/len,az=dz/len;
+          const influence=Math.min(.75,.55*this.fiberGuidance*c);
+          const along=(v[0]*ax+v[1]*ay+v[2]*az)*influence;
+          v[0]=v[0]*(1-influence)+along*ax;
+          v[1]=v[1]*(1-influence)+along*ay;
+          v[2]=v[2]*(1-influence)+along*az;
+        }
+      }
       const sx=clamp((px-v[0]*dt+1)*N*.5-.5,0,N-1);
       const sy=clamp((py-v[1]*dt+1)*N*.5-.5,0,N-1);
       const sz=clamp((pz-v[2]*dt+1)*N*.5-.5,0,N-1);
@@ -182,8 +204,10 @@ export class PigmentField {
       b[i+3]=clamp(b[i+3]*decay+dt*this.foldWrite*contrast*Math.min(1,mass),0,1);
     }
     this.a=b;this.b=a;this.time+=dt;this.dirty=true;
+    if(this.fiberEnabled&&dt>0)this.fibers.step(this,dt,speed);
     this.impulses=this.impulses.filter(s=>(s.ttl-=dt)>0);
   }
+  packFibers(){return this.fibers.pack();}
   pack(){
     if(!this.dirty)return this.bytes;
     const a=this.a,out=this.bytes;
