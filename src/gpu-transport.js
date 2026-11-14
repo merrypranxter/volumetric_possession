@@ -8,6 +8,7 @@ import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
 import {cloneBreederParents,DEFAULT_BREED_SEED} from "./curve-breeder.js";
 import {cloneGeneGallery,cloneGeneSources} from "./gene-gallery.js";
 import {normalizeTraitLocks} from "./trait-locks.js";
+import {cloneColorState} from "./color-control.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
@@ -232,6 +233,7 @@ export class GPUPigmentTransport{
    this.breedTraitLocks=normalizeTraitLocks(source.breedTraitLocks);
    this.breederSources=cloneGeneSources(source.breederSources);
    this.geneGallery=cloneGeneGallery(source.geneGallery);this.geneNextSequence=source.geneNextSequence??1;
+   this.colorGrade=cloneColorState(source.colorGrade);
    this.impulses=[];this.pending=[];
    this.fibers=new GPUFiberMemory(renderer,VS,FS);
    renderer.externalSource=true;renderer.texture=this.front;
@@ -336,7 +338,8 @@ export class GPUPigmentTransport{
      livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount,
      breederParents:cloneBreederParents(this.breederParents),breederSeed:this.breederSeed,
      breedTraitLocks:normalizeTraitLocks(this.breedTraitLocks),
-     breederSources:cloneGeneSources(this.breederSources),geneGallery:cloneGeneGallery(this.geneGallery),geneNextSequence:this.geneNextSequence};
+     breederSources:cloneGeneSources(this.breederSources),geneGallery:cloneGeneGallery(this.geneGallery),geneNextSequence:this.geneNextSequence,
+     colorGrade:cloneColorState(this.colorGrade)};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
@@ -357,6 +360,7 @@ export class GPUPigmentTransport{
    this.breedTraitLocks=normalizeTraitLocks(s.breedTraitLocks);
    this.breederSources=cloneGeneSources(s.breederSources);
    this.geneGallery=cloneGeneGallery(s.geneGallery);this.geneNextSequence=s.geneNextSequence??1;
+   this.colorGrade=cloneColorState(s.colorGrade);
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
       this.livingMode,this.livingRate,this.livingAmount);
    this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
@@ -383,6 +387,10 @@ export class GPUPigmentTransport{
    this.breederParents=cloneBreederParents(source.breederParents);
    this.breederSeed=source.breederSeed??DEFAULT_BREED_SEED;
    this.breedTraitLocks=normalizeTraitLocks(source.breedTraitLocks);
+   this.breederSources=cloneGeneSources(source.breederSources);
+   this.geneGallery=cloneGeneGallery(source.geneGallery);
+   this.geneNextSequence=source.geneNextSequence??1;
+   this.colorGrade=cloneColorState(source.colorGrade);
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
       this.livingMode,this.livingRate,this.livingAmount);
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
