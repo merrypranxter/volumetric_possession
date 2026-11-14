@@ -9,9 +9,9 @@ const fragment = `#version 300 es
 precision highp float;
 precision highp sampler3D;
 out vec4 outColor;
-uniform sampler3D uVolume;
+uniform sampler3D uVolume,uFiberVolume;
 uniform vec3 uEye,uForward,uRight,uUp,uA,uB,uC,uBg;
-uniform float uGain,uGlow,uShadow,uFoldGlow,uWisp,uPrism;
+uniform float uGain,uGlow,uShadow,uFoldGlow,uWisp,uPrism,uFiberLight;
 uniform vec2 uCover;
 uniform vec3 uLightDir;
 uniform vec2 uCanvasSize;
@@ -32,13 +32,17 @@ void main(){
       vec3 pos=uEye+direction*(start+(float(i)+.5)*stride);
       vec3 sampleUV=clamp(pos*.5+.5,vec3(0.0),vec3(1.0));
       vec4 sampleData=texture(uVolume,sampleUV);
+      vec4 fiberSample=texture(uFiberVolume,sampleUV);
+      float coherence=fiberSample.a;
+      vec3 tangent=normalize(fiberSample.rgb*2.0-1.0+vec3(.00001));
       // A feathered spatial support removes the harsh box-shaped boundary.
       // The underlying persistent 3D density is unchanged.
       float boundary=1.0-max(max(abs(pos.x),abs(pos.y)),abs(pos.z));
       float edgeFade=smoothstep(0.0,.32,boundary);
       vec3 dye=sampleData.rgb*edgeFade;
       float fold=clamp(sampleData.a*uFoldGlow*edgeFade,0.0,2.0);
-      float mass=uMemoryView==1?sampleData.a*1.8*edgeFade:(dye.r+dye.g+dye.b);
+      float mass=uMemoryView==1?sampleData.a*1.8*edgeFade:
+        uMemoryView==2?coherence*1.8*edgeFade:(dye.r+dye.g+dye.b);
       if(mass>.008){
         // Integrate optical depth toward the light: 1/2/4 taps by quality.
         // This is an art-directed single-scattering approximation, not a full solver.
@@ -57,7 +61,14 @@ void main(){
                   *exp(-uShadow*opticalDepth*.68);
         vec3 pigment=uMemoryView==1
           ? vec3(.83,.24,1.0)
+          : uMemoryView==2
+          ? abs(tangent)*.86+vec3(.08)
           : (dye.r*uA+dye.g*uB+dye.b*uC)/max(mass,.0001);
+        // Anisotropic filament light: a stored world-space tangent catches
+        // light according to its angle to the light/view half vector.
+        vec3 halfVector=normalize(normalize(uLightDir)-direction+vec3(.00001));
+        float cylinder=pow(clamp(1.0-abs(dot(tangent,halfVector)),0.0,1.0),6.0);
+        float fiberShine=clamp(uFiberLight*coherence*(.2+.8*cylinder),0.0,2.0);
         // Color exchange follows physical 3D position and existing pigment channels.
         // Prism is an art-directed optical effect, not a spectral simulation.
         if(uMemoryView==0&&uPrism>.001){
@@ -76,8 +87,9 @@ void main(){
         vec3 filamentTint=mix(pigment,
           clamp(pigment*1.27+vec3(.055,.027,.075),vec3(0.0),vec3(1.8)),
           clamp(.42*wispDetail+.16*fold,0.0,.56));
-        float alpha=1.0-exp(-mass*uGain*stride*(1.0+.38*fold+.23*wispDetail));
-        accum+=trans*alpha*filamentTint*shade*(.76+uGlow*.42)*(1.0+.55*fold+.45*wispDetail);
+        float alpha=1.0-exp(-mass*uGain*stride*(1.0+.38*fold+.23*wispDetail+.40*fiberShine));
+        accum+=trans*alpha*filamentTint*shade*(.76+uGlow*.42)
+          *(1.0+.55*fold+.45*wispDetail+.75*fiberShine);
         trans*=1.0-alpha;
         if(trans<.015)break;
       }
@@ -131,7 +143,7 @@ export class VolumeRenderer{
     if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error("GL link: "+gl.getProgramInfoLog(prog));
     gl.deleteShader(vs);gl.deleteShader(fs);this.prog=prog;
     this.locations={};
-    for(const name of ["uVolume","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uCover","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow","uLightSteps","uFoldGlow","uMemoryView","uWisp","uPrism"])this.locations[name]=gl.getUniformLocation(prog,name);
+    for(const name of ["uVolume","uFiberVolume","uFiberLight","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uCover","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow","uLightSteps","uFoldGlow","uMemoryView","uWisp","uPrism"])this.locations[name]=gl.getUniformLocation(prog,name);
     this.texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.texture);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
@@ -139,12 +151,29 @@ export class VolumeRenderer{
     gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,N,N,N,0,gl.RGBA,gl.UNSIGNED_BYTE,field.pack());
     const uploadError=gl.getError();
     if(uploadError!==gl.NO_ERROR)throw Error("3D texture upload failed (WebGL error "+uploadError+")");
+    this.fiberTexture=gl.createTexture();
+    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_3D,this.fiberTexture);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    for(const dir of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T,gl.TEXTURE_WRAP_R])
+      gl.texParameteri(gl.TEXTURE_3D,dir,gl.CLAMP_TO_EDGE);
+    gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,N,N,N,0,gl.RGBA,gl.UNSIGNED_BYTE,field.packFibers());
+    gl.activeTexture(gl.TEXTURE0);
+    const fiberError=gl.getError();
+    if(fiberError!==gl.NO_ERROR)throw Error("3D fiber texture upload failed: "+fiberError);
     this.vao=gl.createVertexArray();this.uploaded=true;
   }
   upload(){
-    const gl=this.gl;if(this.externalSource||!this.field.dirty)return;
-    gl.bindTexture(gl.TEXTURE_3D,this.texture);
-    gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,N,N,N,gl.RGBA,gl.UNSIGNED_BYTE,this.field.pack());
+    const gl=this.gl;if(this.externalSource)return;
+    if(this.field.dirty){
+      gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.texture);
+      gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,N,N,N,gl.RGBA,gl.UNSIGNED_BYTE,this.field.pack());
+    }
+    if(this.field.fibers.dirty){
+      gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_3D,this.fiberTexture);
+      gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,N,N,N,gl.RGBA,gl.UNSIGNED_BYTE,this.field.packFibers());
+      gl.activeTexture(gl.TEXTURE0);
+    }
   }
   draw(camera,colors,opts){
     const gl=this.gl,canvas=this.canvas,rect=canvas.getBoundingClientRect();
@@ -159,8 +188,12 @@ export class VolumeRenderer{
     if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;}
     this.upload();gl.viewport(0,0,w,h);gl.useProgram(this.prog);gl.bindVertexArray(this.vao);
     gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.texture);
+    gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_3D,this.fiberTexture);
+    gl.activeTexture(gl.TEXTURE0);
     const U=this.locations,c=cameraVectors(camera);
-    gl.uniform1i(U.uVolume,0);gl.uniform3fv(U.uEye,c.eye);gl.uniform3fv(U.uForward,c.forward);
+    gl.uniform1i(U.uVolume,0);gl.uniform1i(U.uFiberVolume,2);
+    gl.uniform1f(U.uFiberLight,opts.fiberLight??0);
+    gl.uniform3fv(U.uEye,c.eye);gl.uniform3fv(U.uForward,c.forward);
     gl.uniform3fv(U.uRight,c.right);gl.uniform3fv(U.uUp,c.up);
     gl.uniform3fv(U.uA,colors[0]);gl.uniform3fv(U.uB,colors[1]);gl.uniform3fv(U.uC,colors[2]);gl.uniform3fv(U.uBg,opts.background);
     gl.uniform2fv(U.uCover,coverProjection(w/h));gl.uniform1f(U.uGain,opts.gain);gl.uniform1f(U.uGlow,opts.glow);
