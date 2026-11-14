@@ -5,6 +5,7 @@ import {MAX_CURVES,MAX_CURVE_POINTS,newFlowCurve,resampleStroke} from "./flow-cu
 import {splitFlowCurve,braidFlowCurve} from "./curve-topology.js";
 import {cloneFlowCurves} from "./flow-curve.js";
 import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
+import {BREEDER_SLOTS,DEFAULT_BREED_SEED,captureCurveGenome,cloneBreederParents,breedCurveGenomes,nurseryStarters} from "./curve-breeder.js";
 import {GPUPigmentTransport} from "./gpu-transport.js";
 const $=id=>document.getElementById(id);
 const palettes={
@@ -106,6 +107,25 @@ function curveSelectionUI(){
     "Resting geometry":(engine.livingMode==="unravel"||engine.livingMode==="reconnect")&&curves.length!==2?
     "Draw or braid two curves":"Evolving at t = "+engine.time.toFixed(1)+" s";
 }
+function updateGeneNursery(){
+  const parents=engine.breederParents||[];
+  const count=parents.filter(Boolean).length;
+  $("geneParentCount").textContent=count+" / "+BREEDER_SLOTS+" parents";
+  for(let i=0;i<BREEDER_SLOTS;i++){
+    const parent=parents[i];
+    $("geneParent"+(i+1)+"Label").textContent=parent?
+      parent.curves.length+" curve"+(parent.curves.length===1?"":"s")+" · "+
+      parent.curves.map(c=>c.type).join(" / ")+" · "+parent.livingMode:"Empty";
+  }
+  $("breedChild").disabled=count<2;
+  $("clearGeneParents").disabled=count===0;
+  $("breedSeed").value=engine.breederSeed??DEFAULT_BREED_SEED;
+}
+function syncBreedingField(){
+  if(engine===field)return;
+  field.breederParents=cloneBreederParents(engine.breederParents);
+  field.breederSeed=engine.breederSeed;
+}
 function drawCurveOverlay(){
   if(!curveContext)return;
   const rect=canvas.getBoundingClientRect(),scale=Math.min(window.devicePixelRatio||1,2);
@@ -201,7 +221,7 @@ function clearHistory(){
 }
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
 function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();}
-function restore(s){engine.restore(s);curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
+function restore(s){engine.restore(s);syncBreedingField();updateGeneNursery();curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
 $("forgeMode").value=engine.forgeMode||"off";field.forgeMode=engine.forgeMode;
 $("livingMode").value=engine.livingMode||"still";field.livingMode=engine.livingMode;
 $("fiberEnabled").value=engine.fiberEnabled?"on":"off";field.fiberEnabled=engine.fiberEnabled;
@@ -293,6 +313,81 @@ $("clearSculpt").addEventListener("click",()=>{
 });
 // Curve Witch editing: one checkpoint per operation, never every pointer move.
 $("selectDrawFlow").addEventListener("click",()=>{setMode("curve");status("Draw flow · tap a dot to bend, or draw a new path");});
+for(let i=0;i<BREEDER_SLOTS;i++){
+  $("captureGene"+(i+1)).addEventListener("click",()=>{
+    if(!engine.flowCurves.length){status("Draw a curve first, or load the weird starter parents");return;}
+    const before=engine.snapshot();
+    engine.breederParents[i]=captureCurveGenome(engine);
+    syncBreedingField();updateGeneNursery();snapshotCommand(before);
+    $("breedResult").textContent="Captured parent "+String.fromCharCode(65+i);
+    status("Parent "+String.fromCharCode(65+i)+" captured: permanent geometry and motion DNA");
+  });
+}
+$("loadGeneStarters").addEventListener("click",()=>{
+  const before=engine.snapshot();
+  engine.breederParents=cloneBreederParents(nurseryStarters());
+  syncBreedingField();updateGeneNursery();snapshotCommand(before);
+  $("breedResult").textContent="Three weird parents loaded";
+  status("The nursery is full: writhing stream, opposed coil braid and reconnecting crosscurrents");
+});
+$("breedMutation").addEventListener("input",()=>{
+  $("breedMutationText").textContent=Number($("breedMutation").value).toFixed(2);
+});
+$("breedSeed").addEventListener("change",()=>{
+  const n=Number($("breedSeed").value);
+  if(!Number.isInteger(n)||n<0||n>0xffffffff){
+    $("breedSeed").value=engine.breederSeed;status("Seed must be an integer from 0 to 4294967295");return;
+  }
+  if(n===engine.breederSeed)return;
+  const before=engine.snapshot();
+  engine.breederSeed=n>>>0;field.breederSeed=engine.breederSeed;
+  snapshotCommand(before);
+  status("Breeding seed set to "+engine.breederSeed);
+});
+$("breedChild").addEventListener("click",()=>{
+  const available=engine.breederParents.filter(Boolean).length;
+  if(available<2){status("Capture two parents or load the starter nursery");return;}
+  const seed=Number($("breedSeed").value);
+  if(!Number.isInteger(seed)||seed<0||seed>0xffffffff){
+    status("Enter a whole-number breeding seed between 0 and 4294967295");return;
+  }
+  const dominant=$("breedDominance").value;
+  if(dominant!=="balanced"&&!engine.breederParents[Number(dominant)]){
+    status("That dominant parent slot is empty");return;
+  }
+  const child=breedCurveGenomes(engine.breederParents,seed,Number($("breedMutation").value),dominant);
+  const before=engine.snapshot();
+  engine.flowCurves=cloneFlowCurves(child.curves);
+  engine.livingMode=child.livingMode;
+  engine.livingRate=child.livingRate;
+  engine.livingAmount=child.livingAmount;
+  engine.breederSeed=(seed+1)>>>0;
+  if(engine!==field){
+    field.flowCurves=cloneFlowCurves(engine.flowCurves);
+    field.livingMode=engine.livingMode;
+    field.livingRate=engine.livingRate;
+    field.livingAmount=engine.livingAmount;
+  }
+  field.breederSeed=engine.breederSeed;
+  selectedCurve=0;selectedHandle=-1;
+  $("livingMode").value=engine.livingMode;
+  for(const id of ["livingRate","livingAmount"]){
+    $(id).value=engine[id];
+    $(id+"Text").textContent=Number(engine[id]).toFixed(2);
+  }
+  curveSelectionUI();updateGeneNursery();snapshotCommand(before);setMode("curve");
+  const report="Seed "+seed+" · "+child.curves.length+" curves · "+child.livingMode;
+  $("breedResult").textContent=report;
+  status("Offspring born — "+report+" · existing pigment and fibers preserved");
+});
+$("clearGeneParents").addEventListener("click",()=>{
+  if(!engine.breederParents.some(Boolean)||!confirm("Clear all three captured parents? Current art will remain."))return;
+  const before=engine.snapshot();
+  engine.breederParents=cloneBreederParents();
+  syncBreedingField();updateGeneNursery();snapshotCommand(before);
+  $("breedResult").textContent="Nursery cleared";
+  status("Captured parent DNA cleared · living artwork preserved");
+});
 $("livingMode").addEventListener("change",()=>{
   const next=$("livingMode").value;
   if(!LIVING_MODES.includes(next)||next===engine.livingMode)return;
@@ -444,9 +539,9 @@ $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click
 $("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
 for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;
 field.livingMode=engine.livingMode;
-field.livingMode=engine.livingMode;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
+field.livingMode=engine.livingMode;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();updateGeneNursery();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
 $("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(seed,$("genesis").value);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
-for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
+for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();updateGeneNursery();clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
 document.addEventListener("keydown",event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redoStroke();else undoStroke();}});
 canvas.addEventListener("pointerdown",event=>{
@@ -654,7 +749,7 @@ try{
   $("turbulence").value=field.turbulence;
   $("turbulenceText").textContent=field.turbulence.toFixed(1);
   $("engineBadge").textContent=engineMode+" transport";
-  curveSelectionUI();sculptSelectionUI();updateSculptMarkers();
+  updateGeneNursery();curveSelectionUI();sculptSelectionUI();updateSculptMarkers();
   status(engineMode+" immersive volume ready · pinch to zoom, tap Controls for settings");
   requestAnimationFrame(frame);
 }catch(err){status("Cannot start volume: "+err.message);console.error(err);}

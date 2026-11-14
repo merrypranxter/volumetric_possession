@@ -3,6 +3,7 @@ import {FiberMemory} from "./fiber-memory.js";
 import {cloneSculptNodes,sculptVelocity} from "./flow-sculpt.js";
 import {cloneFlowCurves,curveVelocity} from "./flow-curve.js";
 import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
+import {cloneBreederParents,DEFAULT_BREED_SEED} from "./curve-breeder.js";
 // Persistent CPU 3D dye field. The analytic vortices are divergence-free individually.
 // Semi-Lagrangian transport is approximate and dissipative, not a Navier-Stokes solver.
 export const N = 28;
@@ -19,6 +20,7 @@ export class PigmentField {
     this.fiberBend=1;this.fiberGuidance=.65;this.fiberEnabled=true;
     this.sculptNodes=[];this.flowCurves=[];
     this.livingMode="still";this.livingRate=.65;this.livingAmount=.18;this._stepCurves=null;
+    this.breederParents=cloneBreederParents();this.breederSeed=DEFAULT_BREED_SEED;
     this.forgeMode="rosette";this.forgePower=.75;this.forgeWidth=.17;this.forgePace=.65;
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
@@ -80,7 +82,8 @@ export class PigmentField {
     fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
     fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,fibers:this.fibers.snapshot(),
     sculptNodes:cloneSculptNodes(this.sculptNodes),flowCurves:cloneFlowCurves(this.flowCurves),
-    livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount,forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
+    livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount,
+    breederParents:cloneBreederParents(this.breederParents),breederSeed:this.breederSeed,forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
     this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
@@ -92,6 +95,7 @@ export class PigmentField {
     this.flowCurves=cloneFlowCurves(s.flowCurves||[]);
     this.livingMode=LIVING_MODES.includes(s.livingMode)?s.livingMode:"still";
     this.livingRate=s.livingRate??.65;this.livingAmount=s.livingAmount??.18;this._stepCurves=null;
+    this.breederParents=cloneBreederParents(s.breederParents);this.breederSeed=s.breederSeed??DEFAULT_BREED_SEED;
     this.forgeMode=FORGE_MODES.includes(s.forgeMode)?s.forgeMode:"rosette";
     this.forgePower=s.forgePower??.75;this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
     this.a.set(s.values);this.impulses.length=0;this.dirty=true;
