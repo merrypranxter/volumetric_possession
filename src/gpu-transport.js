@@ -239,7 +239,15 @@ export class GPUPigmentTransport{
    renderer.externalSource=true;renderer.texture=this.front;
  }
  stamp(p,r,channel,amount=.38){
-   const color=[0,0,0];color[channel]=amount;this.pending.push({p:p.slice(),r,color});
+   if(!Number.isInteger(channel)||channel<0||channel>2)throw Error("Invalid pigment channel");
+   const color=[0,0,0];color[channel]=amount;this.stampRGB(p,r,color);
+ }
+ stampRGB(p,r,color){
+   if(!Array.isArray(p)||p.length!==3||!p.every(Number.isFinite)||
+      !Number.isFinite(r)||r<=0||!Array.isArray(color)||color.length!==3||
+      !color.every(v=>Number.isFinite(v)&&v>=0&&v<=1))
+     throw Error("Invalid chromatic volume stamp");
+   this.pending.push({p:p.slice(),r:Math.min(.7,Math.max(.02,r)),color:color.slice()});
    if(this.pending.length>64)this.pending.shift();
  }
  push(p,v,r){this.impulses.push({p:p.slice(),v:v.slice(),r,ttl:.9});if(this.impulses.length>8)this.impulses.shift();}
