@@ -16,6 +16,68 @@ uniform vec2 uCover;
 uniform vec3 uLightDir;
 uniform vec2 uCanvasSize;
 uniform int uSteps,uLightSteps,uMemoryView;
+uniform float uNeon,uWindingGlow;
+uniform vec4 uGradeLens;
+uniform int uWindCount;
+uniform vec3 uWinding[6];
+
+// The host's ordinary final display pixels are clamped to [0,1] before
+// display-sRGB OKLab grading. Off means exact bypass, no palette mutation.
+vec3 toLinear(vec3 s){
+  return mix(s/12.92,pow((s+.055)/1.055,vec3(2.4)),step(vec3(.04045),s));
+}
+vec3 fromLinear(vec3 s){
+  s=max(s,vec3(0.0));
+  return mix(s*12.92,1.055*pow(s,vec3(1.0/2.4))-.055,step(vec3(.0031308),s));
+}
+vec3 labFromLinear(vec3 v){
+  vec3 lms=vec3(dot(v,vec3(.4122214708,.5363325363,.0514459929)),
+    dot(v,vec3(.2119034982,.6806995451,.1073969566)),
+    dot(v,vec3(.0883024619,.2817188376,.6299787005)));
+  lms=pow(max(lms,vec3(0.0)),vec3(1.0/3.0));
+  return vec3(dot(lms,vec3(.2104542553,.7936177850,-.0040720468)),
+    dot(lms,vec3(1.9779984951,-2.4285922050,.4505937099)),
+    dot(lms,vec3(.0259040371,.7827717662,-.8086757660)));
+}
+vec3 linearFromLab(vec3 lab){
+  float l=lab.x+.3963377774*lab.y+.2158037573*lab.z;
+  float m=lab.x-.1055613458*lab.y-.0638541728*lab.z;
+  float s=lab.x-.0894841775*lab.y-1.2914855480*lab.z;
+  vec3 x=vec3(l*l*l,m*m*m,s*s*s);
+  return vec3(dot(x,vec3(4.0767416621,-3.3077115913,.2309699292)),
+    dot(x,vec3(-1.2684380046,2.6097574011,-.3413193965)),
+    dot(x,vec3(-.0041960863,-.7034186147,1.7076147010)));
+}
+vec3 gradeNeon(vec3 encoded,vec2 uv){
+  // The host's original art-directed output may contain values above 1.
+  // Never flatten already-blooming channels when chroma grading is enabled.
+  if(any(greaterThanEqual(encoded,vec3(.995))))return encoded;
+  vec3 lab=labFromLinear(toLinear(clamp(encoded,0.0,1.0)));
+  float C=length(lab.yz);
+  // Guard intentional darkness, glowing whites and almost-neutral grays.
+  float protection=smoothstep(.07,.25,lab.x)*(1.0-smoothstep(.79,.98,lab.x))
+    *smoothstep(.008,.045,C);
+  float lensMask=1.0;
+  if(uGradeLens.w>.5){
+    vec2 dd=(uv-uGradeLens.xy)*vec2(uCanvasSize.x/uCanvasSize.y,1.0);
+    lensMask=exp(-dot(dd,dd)/(2.0*uGradeLens.z*uGradeLens.z));
+  }
+  float requested=clamp(uNeon*protection*lensMask,0.0,2.0);
+  if(requested<.002)return encoded;
+  float target=C*(1.0+requested*1.35);
+  float low=C,high=target;
+  // OKLab chroma-direction gamut search: no arbitrary RGB channel clipping.
+  for(int i=0;i<7;i++){
+    float mid=(low+high)*.5;
+    vec2 ab=lab.yz*(mid/max(C,1e-5));
+    vec3 linear=linearFromLab(vec3(lab.x,ab));
+    if(all(greaterThanEqual(linear,vec3(-.0001)))&&
+       all(lessThanEqual(linear,vec3(1.0001))))low=mid;
+    else high=mid;
+  }
+  vec3 graded=fromLinear(linearFromLab(vec3(lab.x,lab.yz*(low/max(C,1e-5)))));
+  return clamp(graded,0.0,1.0);
+}
 void main(){
   vec2 uv=(gl_FragCoord.xy/uCanvasSize)*2.0-1.0;
   vec3 direction=normalize(uForward*1.55+uRight*uv.x*uCover.x+uUp*uv.y*uCover.y);
@@ -97,7 +159,25 @@ void main(){
   }
   vec3 color=accum+trans*uBg;
   color=color/(vec3(1.0)+color*.29);
-  outColor=vec4(pow(max(color,vec3(0.0)),vec3(.82)),1.0);
+  vec3 encoded=pow(max(color,vec3(0.0)),vec3(.82));
+  vec2 screenUV=gl_FragCoord.xy/uCanvasSize;
+  // A measured index of the authored 2D XY flow slice, projected here
+  // only for an optional read-only chromatic marker (not volume genus).
+  if(uWindCount>0&&uWindingGlow>0.0){
+    for(int i=0;i<6;i++){
+      if(i>=uWindCount)break;
+      vec3 defect=uWinding[i];
+      vec2 q=(screenUV-defect.xy)*vec2(uCanvasSize.x/uCanvasSize.y,1.0);
+      float d=length(q);
+      float halo=exp(-d*d/.0064)*clamp(uWindingGlow,0.0,2.0);
+      vec3 source=defect.z>0.0?uB:uC;
+      float ink=clamp(length(encoded)*.9,0.0,1.0);
+      encoded=mix(encoded,clamp(encoded*.48+source*.92,0.0,1.0),
+        clamp(halo*ink*.5,0.0,.72));
+    }
+  }
+  if(uNeon>.001)encoded=gradeNeon(encoded,screenUV);
+  outColor=vec4(encoded,1.0);
 }
 `;
 function compile(gl,type,src){
@@ -157,7 +237,7 @@ export class VolumeRenderer{
     if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error("GL link: "+gl.getProgramInfoLog(prog));
     gl.deleteShader(vs);gl.deleteShader(fs);this.prog=prog;
     this.locations={};
-    for(const name of ["uVolume","uFiberVolume","uFiberLight","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uCover","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow","uLightSteps","uFoldGlow","uMemoryView","uWisp","uPrism"])this.locations[name]=gl.getUniformLocation(prog,name);
+    for(const name of ["uVolume","uFiberVolume","uFiberLight","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uCover","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow","uLightSteps","uFoldGlow","uMemoryView","uWisp","uPrism","uNeon","uGradeLens","uWindCount","uWindingGlow","uWinding[0]"])this.locations[name]=gl.getUniformLocation(prog,name);
     this.texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.texture);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
@@ -218,6 +298,20 @@ export class VolumeRenderer{
     gl.uniform1i(U.uMemoryView,opts.memoryView||0);
     gl.uniform1f(U.uWisp,opts.wisp??0);
     gl.uniform1f(U.uPrism,opts.prism??0);
+    const grade=opts.colorGrade||{neon:0,mode:"full",lens:[.5,.5],radius:.3,defectGlow:0};
+    gl.uniform1f(U.uNeon,grade.neon||0);
+    gl.uniform4f(U.uGradeLens,grade.lens?.[0]??.5,grade.lens?.[1]??.5,
+      grade.radius??.3,grade.mode==="lens"?1:0);
+    const defects=(opts.windingDefects||[]).slice(0,6);
+    const packed=new Float32Array(18);
+    for(let i=0;i<defects.length;i++){
+      packed[3*i]=defects[i].uv[0];
+      packed[3*i+1]=defects[i].uv[1];
+      packed[3*i+2]=defects[i].charge;
+    }
+    gl.uniform1i(U.uWindCount,defects.length);
+    gl.uniform1f(U.uWindingGlow,grade.defectGlow||0);
+    gl.uniform3fv(U["uWinding[0]"],packed);
     gl.drawArrays(gl.TRIANGLES,0,3);
   }
 }

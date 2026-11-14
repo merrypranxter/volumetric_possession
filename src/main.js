@@ -10,6 +10,9 @@ import {GALLERY_LIMIT,GENE_STORAGE_KEY,cloneGeneGallery,cloneGeneSources,addGene
 import {TRAIT_KEYS,TRAIT_LABELS,normalizeTraitLocks,breedWithTraitLocks} from "./trait-locks.js";
 import {SURGERY_OPERATIONS,SURGERY_LABELS,performGeneSurgery} from "./gene-surgery.js";
 import {GPUPigmentTransport} from "./gpu-transport.js";
+import {twistForceCurve,twoFingerTransform,wrappedTurn} from "./gesture-twist.js";
+import {cloneColorState,moveColorLens} from "./color-control.js";
+import {measureAuthoredWinding,projectWindingDefects} from "./flow-winding.js";
 const $=id=>document.getElementById(id);
 const palettes={
  "Prismatic Riot":["#ff36cb","#1df6eb","#ffe143"],
@@ -32,7 +35,9 @@ const camera={azimuth:.62,elevation:.23,distance:IMMERSIVE_DISTANCE};
 const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,shadow:1,lightDirection:"side",lightSteps:2,foldGlow:1.3,memoryView:0,fiberLight:1.5,wisp:1,prism:.8,steps:50,background:[0.009,.006,.023]};
 const directions={side:[.75,.45,.4],top:[.2,1,.2],back:[-.6,.23,-.75]};
 const undo=[],redo=[];
-const foldEditDrafts=new Map();
+const foldEditDrafts=new Map(),gradeEditDrafts=new Map();
+let pinchEdit=null,pinchSuppressed=false;
+let windingCache=[],lastWindingScan=0;
 const structuralControls=["foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","fiberGrowth","fiberPersistence","fiberBend","fiberGuidance","livingRate","livingAmount"];
 function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower","forgeWidth","forgePace","fiberPersistence","fiberGuidance","livingRate","livingAmount"].includes(id)?2:1;}
 const touches=new Map();
@@ -397,15 +402,43 @@ function touchSpan(){
   return points.length<2?0:Math.hypot(points[0].x-points[1].x,points[0].y-points[1].y);
 }
 const status=text=>$("status").textContent=text;
+function syncColorState(){
+  const grade=cloneColorState(engine.colorGrade);
+  engine.colorGrade=grade;field.colorGrade=cloneColorState(grade);
+  $("neonIntensity").value=grade.neon;
+  $("neonIntensityText").textContent=grade.neon.toFixed(1);
+  $("neonMode").value=grade.mode;
+  $("neonRadius").value=grade.radius;
+  $("neonRadiusText").textContent=grade.radius.toFixed(2);
+  $("windingGlow").value=grade.defectGlow;
+  $("windingGlowText").textContent=grade.defectGlow.toFixed(1);
+  updateColorLensMarker();
+}
+function updateColorLensMarker(){
+  const marker=$("colorLensMarker"),grade=engine.colorGrade;
+  marker.hidden=mode!=="neon"||grade.mode!=="lens"||grade.neon<=0;
+  if(marker.hidden)return;
+  const rect=canvas.getBoundingClientRect(),size=grade.radius*2*rect.height;
+  marker.style.left=(grade.lens[0]*100)+"%";
+  marker.style.top=((1-grade.lens[1])*100)+"%";
+  marker.style.width=size+"px";marker.style.height=size+"px";
+}
+function setGrade(update){
+  engine.colorGrade=cloneColorState({...engine.colorGrade,...update});
+  field.colorGrade=cloneColorState(engine.colorGrade);
+  syncColorState();
+}
 function releaseCommands(commands){for(const cmd of commands){engine.release?.(cmd.before);engine.release?.(cmd.after);}}
 function clearHistory(){
   for(const saved of foldEditDrafts.values())engine.release?.(saved);
   foldEditDrafts.clear();
+  for(const saved of gradeEditDrafts.values())engine.release?.(saved);
+  gradeEditDrafts.clear();
   releaseCommands(undo);releaseCommands(redo);undo.length=0;redo.length=0;updateHistory();
 }
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
 function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();persistGeneBank();}
-function restore(s){engine.restore(s);invalidateSurgeryPreview();syncBreedingField();updateGeneNursery();renderGeneGallery();persistGeneBank();curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
+function restore(s){engine.restore(s);syncColorState();lastWindingScan=0;invalidateSurgeryPreview();syncBreedingField();updateGeneNursery();renderGeneGallery();persistGeneBank();curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
 $("forgeMode").value=engine.forgeMode||"off";field.forgeMode=engine.forgeMode;
 $("livingMode").value=engine.livingMode||"still";field.livingMode=engine.livingMode;
 $("fiberEnabled").value=engine.fiberEnabled?"on":"off";field.fiberEnabled=engine.fiberEnabled;
@@ -418,11 +451,32 @@ function undoStroke(){if(!undo.length)return;const cmd=undo.pop();redo.push(cmd)
 function redoStroke(){if(!redo.length)return;const cmd=redo.pop();undo.push(cmd);restore(cmd.after);updateHistory();}
 function params(){const p=palettes[paletteSelect.value]||palettes["Prismatic Riot"];return p.map(rgb);}
 function draw(){
-  if(!renderer)return;const bg=[options.background,[.012,.018,.065],[.042,.008,.05]][Number($("background").value)];
-  renderer.draw(camera,params(),{gain:options.gain,glow:options.glow,steps:options.steps,background:bg,lightDir:directions[options.lightDirection],shadow:options.shadow,lightSteps:options.lightSteps,foldGlow:options.foldGlow,memoryView:options.memoryView,wisp:options.wisp,prism:options.prism,fiberLight:options.fiberLight});
-  updateSculptMarkers();drawCurveOverlay();
+  if(!renderer)return;
+  const bg=[options.background,[.012,.018,.065],[.042,.008,.05]][Number($("background").value)];
+  const grade=engine.colorGrade;
+  let projected=[];
+  if(grade.defectGlow>.001){
+    const now=Date.now();
+    if(!lastWindingScan||now-lastWindingScan>650){
+      windingCache=measureAuthoredWinding(displayFlowCurves(),engine.sculptNodes,engine.time,20);
+      lastWindingScan=now;
+      $("flowWindingReport").textContent="XY phase defects: "+windingCache.length+
+        " sampled ±1 charges (20×20; z=0)";
+    }
+    const rect=canvas.getBoundingClientRect();
+    projected=projectWindingDefects(windingCache,point=>{
+      const pos=projectToScreen(canvas,camera,point);
+      return pos?{x:pos.x/rect.width,y:pos.y/rect.height,visible:pos.visible}:null;
+    },6);
+  }else $("flowWindingReport").textContent="Flow winding: off";
+  renderer.draw(camera,params(),{gain:options.gain,glow:options.glow,steps:options.steps,
+    background:bg,lightDir:directions[options.lightDirection],shadow:options.shadow,
+    lightSteps:options.lightSteps,foldGlow:options.foldGlow,memoryView:options.memoryView,
+    wisp:options.wisp,prism:options.prism,fiberLight:options.fiberLight,
+    colorGrade:grade,windingDefects:projected});
+  updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();
 }
-function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera",sculpt:"SCULPT · tap to anchor / drag glowing handles",curve:"DRAW FLOW · stroke a 3D path or drag a trace"}[mode];updateSculptMarkers();drawCurveOverlay();}
+function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera",sculpt:"SCULPT · tap to anchor / drag glowing handles",curve:"DRAW FLOW · twist/pinch a selected curve to edit its force",neon:"NEON LENS · drag light focus / pinch lens radius"}[mode];updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();}
 for(const b of document.querySelectorAll(".mode"))b.addEventListener("click",()=>setMode(b.dataset.mode));
 for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>{
   for(const t of document.querySelectorAll(".tab"))t.setAttribute("aria-pressed",String(t===b));
@@ -447,6 +501,30 @@ for(const id of ["speed","force","brush","depth","density","glow","shadow","turb
     $(id).addEventListener("blur",commit);
   }
 }
+// Color is a scene-level read-only render control with one checkpoint per
+// completed slider gesture. Nothing here mutates pigment or palette stops.
+for(const [id,key] of [["neonIntensity","neon"],["neonRadius","radius"],["windingGlow","defectGlow"]]){
+  $(id).addEventListener("input",()=>{
+    if(!gradeEditDrafts.has(id))gradeEditDrafts.set(id,engine.snapshot());
+    setGrade({[key]:Number($(id).value)});
+    if(id==="windingGlow")lastWindingScan=0;
+  });
+  const commit=()=>{
+    const before=gradeEditDrafts.get(id);if(!before)return;
+    gradeEditDrafts.delete(id);snapshotCommand(before);
+  };
+  $(id).addEventListener("change",commit);
+  $(id).addEventListener("blur",commit);
+  $(id).addEventListener("pointercancel",()=>{
+    const before=gradeEditDrafts.get(id);if(!before)return;
+    gradeEditDrafts.delete(id);restore(before);engine.release?.(before);
+  });
+}
+$("neonMode").addEventListener("change",()=>{
+  if($("neonMode").value===engine.colorGrade.mode)return;
+  const before=engine.snapshot();setGrade({mode:$("neonMode").value});
+  snapshotCommand(before);
+});
 // Sculpt editing shares the existing bounded, GPU-safe checkpoint history.
 $("sculptType").addEventListener("change",()=>{
   const node=engine.sculptNodes?.[selectedSculpt];
@@ -993,12 +1071,28 @@ canvas.addEventListener("pointerdown",event=>{
   if(event.pointerType==="touch"){
     touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
     if(touches.size>1){
-      // A second finger cancels any pending paint stroke before zooming.
+      if(touches.size>2)return;
+      // Roll back the interrupted one-finger draft BEFORE starting a
+      // separate atomic two-finger edit. No phantom drawing after pinch.
       if(active?.before){restore(active.before);engine.release?.(active.before);}
-      active=null;pinchSpan=touchSpan();return;
+      active=null;pinchSpan=touchSpan();pinchSuppressed=false;
+      const fingers=twoFingerTransform([...touches.values()]);
+      if(mode==="curve"&&selectedCurve>=0&&engine.flowCurves[selectedCurve]){
+        pinchEdit={kind:"curve",before:engine.snapshot(),index:selectedCurve,
+          original:cloneFlowCurves([engine.flowCurves[selectedCurve]])[0],
+          axis:cameraVectors(camera).forward,span:fingers.span,angle:fingers.angle,changed:false};
+        status("TWIST the selected 3D strand · PINCH its force radius · release to save");
+      }else if(mode==="neon"){
+        pinchEdit={kind:"neon",before:engine.snapshot(),
+          original:moveColorLens(engine.colorGrade,fingers.center.x,fingers.center.y,
+            canvas.getBoundingClientRect()),
+          span:fingers.span,angle:fingers.angle,changed:false};
+        status("PINCH the neon lens width · move its center · release to save");
+      }else pinchEdit=null;
+      return;
     }
   }
-  if(active)return;
+  if(pinchSuppressed||active)return;
   active={id:event.pointerId,x:event.clientX,y:event.clientY,mode,
     before:mode==="orbit"?null:engine.snapshot(),changed:false,sculptIndex:-1,
     curveIndex:-1,curveMoving:false,curveRaw:null,curveHandle:-1};
@@ -1050,23 +1144,57 @@ canvas.addEventListener("pointerdown",event=>{
     const p=pointFromScreen(canvas,camera,event,options.depth).point;
     engine.stamp(p,options.brush,Number($("pigment").value),.46);active.changed=true;
   }
+  if(mode==="neon"){
+    setGrade(moveColorLens(engine.colorGrade,event.clientX,event.clientY,
+      canvas.getBoundingClientRect()));
+    active.changed=true;
+    status("Painted chroma focus · drag the lens across the artwork");
+  }
 });
 canvas.addEventListener("pointermove",event=>{
   if(touches.has(event.pointerId)){
     touches.set(event.pointerId,{x:event.clientX,y:event.clientY});
     if(touches.size>=2){
+      if(touches.size!==2)return;
+      if(pinchEdit){
+        const fingers=twoFingerTransform([...touches.values()]);
+        const ratio=Math.max(.5,Math.min(3,fingers.span/Math.max(1,pinchEdit.span)));
+        if(pinchEdit.kind==="curve"){
+          const angle=wrappedTurn(fingers.angle,pinchEdit.angle);
+          engine.flowCurves[pinchEdit.index]=twistForceCurve(
+            pinchEdit.original,pinchEdit.axis,angle,ratio);
+          if(engine!==field)field.flowCurves=cloneFlowCurves(engine.flowCurves);
+          pinchEdit.changed=Math.abs(angle)>.006||Math.abs(ratio-1)>.006;
+          if(pinchEdit.changed)lastWindingScan=0;
+          curveSelectionUI();drawCurveOverlay();
+        }else if(pinchEdit.kind==="neon"){
+          const rect=canvas.getBoundingClientRect();
+          const seed=cloneColorState({...pinchEdit.original,
+            radius:pinchEdit.original.radius*ratio});
+          setGrade(moveColorLens(seed,fingers.center.x,fingers.center.y,rect));
+          pinchEdit.changed=Math.abs(ratio-1)>.006||
+            Math.hypot(fingers.center.x-(rect.left+pinchEdit.original.lens[0]*rect.width),
+              fingers.center.y-(rect.top+(1-pinchEdit.original.lens[1])*rect.height))>2;
+        }
+        return;
+      }
       const span=touchSpan();
       if(pinchSpan>0&&span>2)setZoom(camera.distance*pinchSpan/span,false);
       pinchSpan=span;return;
     }
   }
-  if(!active||active.id!==event.pointerId)return;
+  if(pinchSuppressed||!active||active.id!==event.pointerId)return;
   const rect=canvas.getBoundingClientRect();
   const dx=(event.clientX-active.x)/Math.max(1,rect.width),dy=(event.clientY-active.y)/Math.max(1,rect.height);
   if(dx===0&&dy===0)return;
   const {mode:currentMode}=active;
   const oldX=active.x,oldY=active.y;
   active.x=event.clientX;active.y=event.clientY;
+  if(currentMode==="neon"){
+    setGrade(moveColorLens(engine.colorGrade,event.clientX,event.clientY,rect));
+    active.changed=true;
+    return;
+  }
   if(currentMode==="curve"){
     if(active.curveHandle>=0){
       const curve=engine.flowCurves[active.curveIndex];
@@ -1143,6 +1271,22 @@ canvas.addEventListener("pointermove",event=>{
 function completePointer(event,cancelled){
   if(touches.has(event.pointerId))touches.delete(event.pointerId);
   if(touches.size<2)pinchSpan=0;
+  if(pinchEdit){
+    if(cancelled||touches.size<2){
+      const gesture=pinchEdit;pinchEdit=null;pinchSuppressed=touches.size>0;
+      if(cancelled){
+        restore(gesture.before);engine.release?.(gesture.before);
+        status("Two-finger edit cancelled · restored previous geometry");
+      }else if(gesture.changed){
+        snapshotCommand(gesture.before);
+        status(gesture.kind==="curve"?"3D twist and force reach saved · Undo available":
+          "Neon lens geometry saved · Undo available");
+      }else engine.release?.(gesture.before);
+      curveSelectionUI();drawCurveOverlay();
+    }
+    return;
+  }
+  if(pinchSuppressed){if(touches.size===0)pinchSuppressed=false;return;}
   if(!active||active.id!==event.pointerId)return;
   if(active.before){
     if(cancelled){restore(active.before);engine.release?.(active.before);status("Touch cancelled; pigment checkpoint restored");}
@@ -1165,8 +1309,18 @@ function completePointer(event,cancelled){
 canvas.addEventListener("pointerup",e=>completePointer(e,false));
 canvas.addEventListener("pointercancel",e=>completePointer(e,true));
 canvas.addEventListener("lostpointercapture",e=>completePointer(e,true));
-window.addEventListener("blur",()=>{touches.clear();pinchSpan=0;if(active){if(active.before){restore(active.before);engine.release?.(active.before);}active=null;}});
-document.addEventListener("visibilitychange",()=>{lastFrame=0;accumulator=0;});
+function cancelActiveGesture(){
+  if(pinchEdit){
+    const before=pinchEdit.before;pinchEdit=null;restore(before);engine.release?.(before);
+  }
+  if(active?.before){restore(active.before);engine.release?.(active.before);}
+  active=null;touches.clear();pinchSpan=0;pinchSuppressed=false;
+}
+window.addEventListener("blur",cancelActiveGesture);
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"&&(active||pinchEdit)){cancelActiveGesture();status("Gesture rolled back");}
+});
+document.addEventListener("visibilitychange",()=>{lastFrame=0;accumulator=0;if(document.hidden)cancelActiveGesture();});
 canvas.addEventListener("webglcontextlost",e=>{e.preventDefault();paused=true;status("GPU context lost. Reload to restore the volume.");});
 function frame(timestamp){
   try{
@@ -1192,7 +1346,7 @@ try{
   $("turbulence").value=field.turbulence;
   $("turbulenceText").textContent=field.turbulence.toFixed(1);
   $("engineBadge").textContent=engineMode+" transport";
-  restoreSavedGeneBank();updateGeneNursery();renderGeneGallery();curveSelectionUI();sculptSelectionUI();updateSculptMarkers();
+  restoreSavedGeneBank();syncColorState();updateGeneNursery();renderGeneGallery();curveSelectionUI();sculptSelectionUI();updateSculptMarkers();
   status(engineMode+" immersive volume ready · pinch to zoom, tap Controls for settings");
   requestAnimationFrame(frame);
 }catch(err){status("Cannot start volume: "+err.message);console.error(err);}
