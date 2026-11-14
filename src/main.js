@@ -15,6 +15,7 @@ import {cloneColorState,moveColorLens} from "./color-control.js";
 import {measureAuthoredWinding,projectWindingDefects} from "./flow-winding.js";
 import {closestScreenCurve,bendForceCurve} from "./elastic-strand.js";
 import {normalizeAfterlifeSettings,afterlifeEnabled,afterlifeColor,sampleAfterlifeSegment} from "./gesture-afterlife.js";
+import {echoSettings} from "./phantom-echoes.js";
 const $=id=>document.getElementById(id);
 const palettes={
  "Prismatic Riot":["#ff36cb","#1df6eb","#ffe143"],
@@ -401,6 +402,13 @@ function afterlifeSettings(){
     strength:Number($("afterlifeStrength").value),width:Number($("afterlifeWidth").value)
   });
 }
+function phantomSettings(){
+  return echoSettings({
+    mode:$("echoMode").value,copies:Number($("echoCopies").value),
+    delay:Number($("echoDelay").value),drift:Number($("echoDrift").value),
+    duration:Number($("echoDuration").value),strength:Number($("echoStrength").value)
+  });
+}
 function gestureAfterlife(active,oldX,oldY,newX,newY){
   const settings=afterlifeSettings();
   if(!afterlifeEnabled(settings.target,active.mode)||settings.strength<=0)return;
@@ -408,11 +416,16 @@ function gestureAfterlife(active,oldX,oldY,newX,newY){
   const depth=active.curveTug?active.curveTug.world.reduce((s,v,i)=>s+v*forward[i],0):options.depth;
   const from=pointFromScreen(canvas,camera,{clientX:oldX,clientY:oldY},depth).point;
   const to=pointFromScreen(canvas,camera,{clientX:newX,clientY:newY},depth).point;
-  const state=active.afterlife;
+  const state=active.afterlife,echo=phantomSettings();
   const dabs=sampleAfterlifeSegment(state,from,to,settings.width*.55,12);
-  for(const dab of dabs){
-    engine.stampRGB(dab.point,settings.width,
-      afterlifeColor(settings.style,dab.travel,settings.strength));
+  const direction=to.map((v,k)=>v-from[k]);
+  for(const [i,dab] of dabs.entries()){
+    const ink=afterlifeColor(settings.style,dab.travel,settings.strength);
+    engine.stampRGB(dab.point,settings.width,ink);
+    // One birth every four *arc-length-spaced* deposits, not every pointer event.
+    // Newborns have separate 3D paths and a real delayed simulation lifetime.
+    if((active.afterlifeDeposits+i+1)%4===0&&echo.mode!=="off")
+      engine.queueEcho(dab.point,direction,ink,echo,settings.width,dab.travel);
   }
   if(dabs.length){
     active.afterlifeDeposits+=dabs.length;
@@ -495,7 +508,8 @@ function draw(){
 }
 function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera",sculpt:"SCULPT · tap to anchor / drag glowing handles",curve:"DRAW FLOW · tug locally, drag a handle, or twist/pinch the force",neon:"NEON LENS · drag light focus / pinch lens radius"}[mode];updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();}
 for(const b of document.querySelectorAll(".mode"))b.addEventListener("click",()=>setMode(b.dataset.mode));
-for(const [id,digits] of [["afterlifeStrength",1],["afterlifeWidth",3]]){
+for(const [id,digits] of [["afterlifeStrength",1],["afterlifeWidth",3],
+  ["echoDelay",2],["echoDrift",1],["echoDuration",2],["echoStrength",2]]){
   $(id).addEventListener("input",()=>{
     $(id+"Text").textContent=Number($(id).value).toFixed(digits);
   });
