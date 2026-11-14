@@ -49,4 +49,7 @@ test("real full-screen tool is wired into the single-gesture transaction",()=>{
   assert.match(m,/snapshotCommand\(active.before\)/);
   assert.match(m,/if\(cancelled\)\{restore\(active.before\)/);
   assert.match(h,/data-mode="curve"/);
+  assert.match(h,/<option value="handle">/);
+  assert.match(m,/if\(handle>=0&&\$\("curveDragBehavior"\)\.value==="handle"\)/);
+  assert.match(m,/active\.curveMoving=\$\("curveDragBehavior"\)\.value==="move"/);
 });
