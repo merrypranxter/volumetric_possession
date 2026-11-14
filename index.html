@@ -125,7 +125,7 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / TRAIT HEIST 01O</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / GENE SURGERY 01P</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div id="sculptMarkers" aria-hidden="true"></div><canvas id="curveOverlay" aria-hidden="true"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -282,6 +282,38 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 </div>
 <p class="help">Preview is mathematical DNA only—no GPU volume mutation, no seed advancement, no gallery slot used. Hatch commits exactly the previewed child and archives it. The original Breed button still creates a child immediately. Trait locks save with your gene bank and are Undoable.</p>
 <p class="help">Breed from any 2 or 3 captured parents. A seed deterministically produces one editable child with one or two curves—never more than this phone-friendly engine supports. Geometry crossovers use arc-length registration, inherited force traits, smooth correlated mutations, and separate motion inheritance. Offspring replaces only active curve DNA and motion; **your existing pigment and fiber memory stay untouched**. Each birth is Undoable. Breeding advances the seed; enter an earlier seed to recreate that child. Starters populate all three slots instantly.</p>
+<details class="subsystem" id="geneSurgeryPanel">
+<summary>✂ Gene Surgery · operate on living strands</summary>
+<p class="help">Graft one cause-field trait from a parent or a chosen album specimen onto the **current editable creature**. Preview before/after mathematical geometry, then Apply to archive a new descendant. Your pigment, fiber history and other strands are not reset.</p>
+<div class="grid">
+<label>Donor DNA<select id="surgerySource">
+<option value="0">Parent A</option><option value="1">Parent B</option>
+<option value="2">Parent C</option><option value="album">Selected album specimen</option>
+</select></label>
+<label>Operation<select id="surgeryAction">
+<option value="strand">Replace whole strand</option>
+<option value="shape">Replace 3D geometry only</option>
+<option value="force">Replace force law only</option>
+<option value="material">Replace radius + strength</option>
+<option value="append">Add donor as second strand</option>
+<option value="remove">Remove selected strand</option>
+<option value="motion">Replace living motion</option>
+<option value="dynamics">Replace speed + excursion</option>
+</select></label>
+<label>Patient strand<select id="surgeryTarget"><option value="0">Strand 1</option><option value="1">Strand 2</option></select></label>
+<label>Donor strand<select id="surgeryDonorStrand"><option value="0">Donor strand 1</option><option value="1">Donor strand 2</option></select></label>
+</div>
+<div class="grid">
+<label>Before<canvas id="surgeryBefore" width="240" height="104" class="gene-thumb" role="img" aria-label="Current 3D force curves projected to 2D"></canvas></label>
+<label>After<canvas id="surgeryAfter" width="240" height="104" class="gene-thumb" role="img" aria-label="Preview grafted 3D force curves projected to 2D"></canvas></label>
+</div>
+<div class="actionbar">
+<button id="previewSurgery" type="button">👁 Preview graft</button>
+<button id="applySurgery" type="button" disabled>✂ Apply + archive mutant</button>
+</div>
+<p class="gene-archive-note" id="surgeryReport">Choose a parent and preview the operation. Your existing material is untouched until the live flow resumes after surgery.</p>
+<p class="help">To use an old offspring as donor, tap its <strong>View tree</strong> gallery action, then choose <strong>Selected album specimen</strong> here. Adding a strand only works when you have one; removal requires two. Donor strand 2 must actually exist. Every applied surgery is Undoable, archive capacity/favorites are respected, and no GPU pass is added.</p>
+</details>
 <details class="subsystem" id="geneAlbumPanel" open>
 <summary>🧿 Mutant Family Album · <output id="geneAlbumCount">0 / 24</output></summary>
 <p class="help">Every bred offspring enters the album automatically. Select one to see its ancestry, activate it as a living force system, or assign it to Parent A, B or C for the next generation. Favorites are protected from automatic eviction.</p>
