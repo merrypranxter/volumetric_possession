@@ -5,7 +5,8 @@ import {MAX_CURVES,MAX_CURVE_POINTS,newFlowCurve,resampleStroke} from "./flow-cu
 import {splitFlowCurve,braidFlowCurve} from "./curve-topology.js";
 import {cloneFlowCurves} from "./flow-curve.js";
 import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
-import {BREEDER_SLOTS,DEFAULT_BREED_SEED,captureCurveGenome,cloneBreederParents,breedCurveGenomes,nurseryStarters} from "./curve-breeder.js";
+import {BREEDER_SLOTS,DEFAULT_BREED_SEED,captureCurveGenome,cloneCurveGenome,cloneBreederParents,breedCurveGenomes,nurseryStarters} from "./curve-breeder.js";
+import {GALLERY_LIMIT,GENE_STORAGE_KEY,cloneGeneGallery,cloneGeneSources,addGeneSpecimen,editGeneSpecimen,removeGeneSpecimen,genealogicalChain,serializeGeneBank,parseGeneBank} from "./gene-gallery.js";
 import {GPUPigmentTransport} from "./gpu-transport.js";
 const $=id=>document.getElementById(id);
 const palettes={
@@ -33,7 +34,7 @@ const foldEditDrafts=new Map();
 const structuralControls=["foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","fiberGrowth","fiberPersistence","fiberBend","fiberGuidance","livingRate","livingAmount"];
 function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower","forgeWidth","forgePace","fiberPersistence","fiberGuidance","livingRate","livingAmount"].includes(id)?2:1;}
 const touches=new Map();
-let selectedSculpt=-1,selectedCurve=-1,selectedHandle=-1;
+let selectedSculpt=-1,selectedCurve=-1,selectedHandle=-1,selectedGeneId=null;
 const displayFlowCurves=()=>evaluateLivingCurves(engine.flowCurves,engine.time,
   engine.livingMode,engine.livingRate,engine.livingAmount);
 const sculptMarkerContainer=$("sculptMarkers");
@@ -125,6 +126,145 @@ function syncBreedingField(){
   if(engine===field)return;
   field.breederParents=cloneBreederParents(engine.breederParents);
   field.breederSeed=engine.breederSeed;
+  field.breederSources=cloneGeneSources(engine.breederSources);
+  field.geneGallery=cloneGeneGallery(engine.geneGallery);
+  field.geneNextSequence=engine.geneNextSequence;
+}
+function persistGeneBank(){
+  try{
+    if(!window.localStorage)throw Error("Local storage unavailable");
+    window.localStorage.setItem(GENE_STORAGE_KEY,serializeGeneBank(engine));
+    $("geneAlbumStorage").textContent="Saved on this device · backup JSON for safekeeping (no pigment or textures)";
+  }catch(e){
+    $("geneAlbumStorage").textContent="Local save unavailable — use Backup JSON to keep your family safely";
+  }
+}
+function restoreSavedGeneBank(){
+  try{
+    const raw=window.localStorage?.getItem(GENE_STORAGE_KEY);
+    if(!raw)return;
+    const bank=parseGeneBank(raw);
+    Object.assign(engine,bank);
+    syncBreedingField();
+    $("geneAlbumStorage").textContent="Restored local mathematical DNA · export a backup when you find a keeper";
+  }catch(e){
+    $("geneAlbumStorage").textContent="Local family unavailable ("+e.message+"). Import a JSON backup if you have one";
+  }
+}
+function albumPreview(canvas,genome){
+  const c=canvas.getContext?.("2d");if(!c)return;
+  canvas.width=240;canvas.height=104;
+  c.clearRect(0,0,240,104);c.fillStyle="#080b18";c.fillRect(0,0,240,104);
+  const colors={stream:"#36f8e2",coil:"#ef71ff",gather:"#ffc964"};
+  for(const curve of genome.curves){
+    const pts=curve.points.map(p=>[120+94*(.84*p[0]+.36*p[2]),52-41*(p[1]+.18*p[2])]);
+    if(pts.length<2)continue;
+    c.beginPath();c.moveTo(pts[0][0],pts[0][1]);
+    for(const pt of pts.slice(1))c.lineTo(pt[0],pt[1]);
+    c.lineJoin="round";c.lineCap="round";c.lineWidth=4;
+    c.shadowBlur=14;c.shadowColor=colors[curve.type];c.strokeStyle=colors[curve.type];c.stroke();
+    c.shadowBlur=0;c.lineWidth=1.4;c.strokeStyle="#fff5fb";c.stroke();
+  }
+}
+function renderGeneGallery(){
+  const gallery=engine.geneGallery||[],container=$("geneGallery");
+  container.replaceChildren();
+  $("geneAlbumCount").textContent=gallery.length+" / "+GALLERY_LIMIT;
+  $("saveGeneNow").disabled=!engine.flowCurves.length;
+  $("exportGeneBank").disabled=gallery.length===0&&!engine.breederParents.some(Boolean);
+  if(!gallery.some(item=>item.id===selectedGeneId))selectedGeneId=gallery.at(-1)?.id||null;
+  const byId=new Map(gallery.map(g=>[g.id,g]));
+  const selected=byId.get(selectedGeneId);
+  if(selected){
+    const chain=genealogicalChain(gallery,selected.id,4);
+    const textLines=chain.map((n,i)=>"  ".repeat(n.depth)+(n.depth?"↳ ":"")+"G"+n.generation+" · "+n.label+" ("+n.id+")");
+    const missing=selected.parents.filter(p=>p.id&&!byId.has(p.id));
+    if(missing.length)textLines.push("  ↳ Earlier ancestors not in album: "+missing.map(x=>x.label).join(", "));
+    $("geneTree").textContent=textLines.join("\n")+"\n"+(selected.seed===null?"Hand-authored / starter DNA":"Birth seed "+selected.seed);
+  }else $("geneTree").textContent="Select a specimen to reveal its family tree.";
+  const make=(label,fn)=>{
+    const button=document.createElement("button");
+    button.type="button";button.textContent=label;button.addEventListener("click",event=>{event.stopPropagation?.();fn();});
+    return button;
+  };
+  // Newest first; strong favorites remain protected from automatic overflow.
+  for(const item of [...gallery].reverse()){
+    const card=document.createElement("article");card.className="gene-card";
+    card.setAttribute("role","listitem");card.dataset.selected=String(item.id===selectedGeneId);
+    const preview=document.createElement("canvas");preview.className="gene-thumb";
+    preview.setAttribute("aria-hidden","true");albumPreview(preview,item.genome);card.append(preview);
+    const name=document.createElement("div");name.className="gene-card-name";
+    name.textContent=(item.favorite?"★ ":"")+item.label;card.append(name);
+    const subtitle=document.createElement("div");subtitle.className="gene-card-sub";
+    subtitle.textContent="G"+item.generation+" · "+item.genome.curves.length+" curve(s) · "+item.genome.livingMode;
+    card.append(subtitle);
+    const actions=document.createElement("div");actions.className="gene-card-actions";
+    actions.append(
+      make("View tree",()=>{selectedGeneId=item.id;renderGeneGallery();}),
+      make("Activate",()=>activateArchivedGene(item.id)),
+      make(item.favorite?"★ Saved":"☆ Keep",()=>{
+        const before=engine.snapshot();engine.geneGallery=editGeneSpecimen(engine.geneGallery,item.id,{favorite:!item.favorite});
+        syncBreedingField();snapshotCommand(before);renderGeneGallery();
+      })
+    );
+    for(let i=0;i<BREEDER_SLOTS;i++)actions.append(make("Parent "+String.fromCharCode(65+i),
+      ()=>promoteArchivedGene(item.id,i)));
+    actions.append(
+      make("Rename",()=>renameArchivedGene(item.id)),
+      make("×",()=>removeArchivedGene(item.id))
+    );
+    card.append(actions);container.append(card);
+  }
+}
+function saveGenomeToAlbum(genome,options={}){
+  const saved=addGeneSpecimen(engine.geneGallery,genome,
+    {...options,sequence:engine.geneNextSequence});
+  engine.geneGallery=saved.gallery;engine.geneNextSequence=saved.nextSequence;
+  selectedGeneId=saved.record.id;
+  return saved.record;
+}
+function promoteArchivedGene(id,slot){
+  const chosen=engine.geneGallery.find(g=>g.id===id);if(!chosen)return;
+  const before=engine.snapshot();
+  engine.breederParents[slot]=cloneCurveGenome(chosen.genome);
+  engine.breederSources[slot]={id:chosen.id,label:chosen.label};
+  syncBreedingField();snapshotCommand(before);updateGeneNursery();renderGeneGallery();
+  status(chosen.label+" promoted to Parent "+String.fromCharCode(65+slot));
+}
+function activateArchivedGene(id){
+  const specimen=engine.geneGallery.find(g=>g.id===id);if(!specimen)return;
+  const before=engine.snapshot();const genome=cloneCurveGenome(specimen.genome);
+  engine.flowCurves=cloneFlowCurves(genome.curves);
+  engine.livingMode=genome.livingMode;engine.livingRate=genome.livingRate;engine.livingAmount=genome.livingAmount;
+  if(engine!==field){
+    field.flowCurves=cloneFlowCurves(engine.flowCurves);
+    field.livingMode=engine.livingMode;field.livingRate=engine.livingRate;field.livingAmount=engine.livingAmount;
+  }
+  $("livingMode").value=engine.livingMode;
+  for(const id of ["livingRate","livingAmount"]){
+    $(id).value=engine[id];$(id+"Text").textContent=Number(engine[id]).toFixed(2);
+  }
+  selectedCurve=0;selectedHandle=-1;selectedGeneId=id;
+  snapshotCommand(before);setMode("curve");curveSelectionUI();renderGeneGallery();
+  status("Activated "+specimen.label+" · pigment and fiber history preserved");
+}
+function renameArchivedGene(id){
+  const item=engine.geneGallery.find(g=>g.id===id);if(!item)return;
+  const name=prompt("Name this mathematical specimen",item.label);
+  if(name===null||!name.trim())return;
+  const before=engine.snapshot();
+  engine.geneGallery=editGeneSpecimen(engine.geneGallery,id,{label:name});
+  for(const ref of engine.breederSources||[])if(ref?.id===id)ref.label=name.trim().slice(0,48);
+  syncBreedingField();snapshotCommand(before);renderGeneGallery();updateGeneNursery();
+}
+function removeArchivedGene(id){
+  const specimen=engine.geneGallery.find(g=>g.id===id);if(!specimen)return;
+  if(!confirm("Delete "+specimen.label+" from the album? Descendants keep their ancestral label, but the specimen cannot be reopened."))return;
+  const before=engine.snapshot();
+  engine.geneGallery=removeGeneSpecimen(engine.geneGallery,id);
+  selectedGeneId=null;
+  syncBreedingField();snapshotCommand(before);renderGeneGallery();
+  status("Specimen deleted; saved descendants and existing material remain");
 }
 function drawCurveOverlay(){
   if(!curveContext)return;
@@ -220,8 +360,8 @@ function clearHistory(){
   releaseCommands(undo);releaseCommands(redo);undo.length=0;redo.length=0;updateHistory();
 }
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
-function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();}
-function restore(s){engine.restore(s);syncBreedingField();updateGeneNursery();curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
+function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();persistGeneBank();}
+function restore(s){engine.restore(s);syncBreedingField();updateGeneNursery();renderGeneGallery();persistGeneBank();curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
 $("forgeMode").value=engine.forgeMode||"off";field.forgeMode=engine.forgeMode;
 $("livingMode").value=engine.livingMode||"still";field.livingMode=engine.livingMode;
 $("fiberEnabled").value=engine.fiberEnabled?"on":"off";field.fiberEnabled=engine.fiberEnabled;
@@ -317,18 +457,41 @@ for(let i=0;i<BREEDER_SLOTS;i++){
   $("captureGene"+(i+1)).addEventListener("click",()=>{
     if(!engine.flowCurves.length){status("Draw a curve first, or load the weird starter parents");return;}
     const before=engine.snapshot();
-    engine.breederParents[i]=captureCurveGenome(engine);
-    syncBreedingField();updateGeneNursery();snapshotCommand(before);
-    $("breedResult").textContent="Captured parent "+String.fromCharCode(65+i);
-    status("Parent "+String.fromCharCode(65+i)+" captured: permanent geometry and motion DNA");
+    try{
+      const parent=captureCurveGenome(engine),letter=String.fromCharCode(65+i);
+      const item=saveGenomeToAlbum(parent,{label:"Captured Parent "+letter+" #"+engine.geneNextSequence});
+      engine.breederParents[i]=cloneCurveGenome(parent);
+      engine.breederSources[i]={id:item.id,label:item.label};
+      syncBreedingField();updateGeneNursery();snapshotCommand(before);renderGeneGallery();
+      $("breedResult").textContent="Captured parent "+letter;
+      status("Parent "+letter+" archived for selective breeding");
+    }catch(error){engine.release?.(before);status("Capture failed: "+error.message);}
+
   });
 }
 $("loadGeneStarters").addEventListener("click",()=>{
   const before=engine.snapshot();
-  engine.breederParents=cloneBreederParents(nurseryStarters());
-  syncBreedingField();updateGeneNursery();snapshotCommand(before);
-  $("breedResult").textContent="Three weird parents loaded";
-  status("The nursery is full: writhing stream, opposed coil braid and reconnecting crosscurrents");
+  try{
+    const starters=nurseryStarters(),labels=["Writhe Siren","Coil Doppelgänger","Tail-Swap Devil"];
+    // Build all three before changing the active scene, so a full starred
+    // gallery cannot partially replace the family.
+    let staged=cloneGeneGallery(engine.geneGallery),serial=engine.geneNextSequence;
+    const refs=[];
+    for(let i=0;i<3;i++){
+      const saved=addGeneSpecimen(staged,starters[i],{
+        sequence:serial,label:labels[i]+" · G0",favorite:false
+      });
+      staged=saved.gallery;serial=saved.nextSequence;
+      refs.push({id:saved.record.id,label:saved.record.label});
+    }
+    engine.geneGallery=staged;engine.geneNextSequence=serial;
+    engine.breederParents=cloneBreederParents(starters);
+    engine.breederSources=cloneGeneSources(refs);
+    selectedGeneId=refs[2].id;
+    syncBreedingField();updateGeneNursery();snapshotCommand(before);renderGeneGallery();
+    $("breedResult").textContent="Three weird parents archived";
+    status("Three starter ancestors archived · they're ready to breed and mutate");
+  }catch(error){engine.release?.(before);status("Nursery failed: "+error.message);}
 });
 $("breedMutation").addEventListener("input",()=>{
   $("breedMutationText").textContent=Number($("breedMutation").value).toFixed(2);
@@ -355,8 +518,23 @@ $("breedChild").addEventListener("click",()=>{
   if(dominant!=="balanced"&&!engine.breederParents[Number(dominant)]){
     status("That dominant parent slot is empty");return;
   }
-  const child=breedCurveGenomes(engine.breederParents,seed,Number($("breedMutation").value),dominant);
+  const mutation=Number($("breedMutation").value);
+  const child=breedCurveGenomes(engine.breederParents,seed,mutation,dominant);
+  // Archive the child BEFORE touching the live material. Favorite-only full
+  // archives reject birth clearly instead of silently losing specimens.
+  let archived;
+  try{
+    const parents=(engine.breederSources||[]).map((ref,i)=>engine.breederParents[i]?
+      ref||{id:null,label:"Unsaved Parent "+String.fromCharCode(65+i)}:null).filter(Boolean);
+    archived=addGeneSpecimen(engine.geneGallery,child,{
+      sequence:engine.geneNextSequence,parents,seed,mutation,
+      label:"Mutant "+engine.geneNextSequence+" · seed "+seed
+    });
+  }catch(error){status("Birth not archived: "+error.message);return;}
   const before=engine.snapshot();
+  engine.geneGallery=archived.gallery;
+  engine.geneNextSequence=archived.nextSequence;
+  selectedGeneId=archived.record.id;
   engine.flowCurves=cloneFlowCurves(child.curves);
   engine.livingMode=child.livingMode;
   engine.livingRate=child.livingRate;
@@ -375,8 +553,8 @@ $("breedChild").addEventListener("click",()=>{
     $(id).value=engine[id];
     $(id+"Text").textContent=Number(engine[id]).toFixed(2);
   }
-  curveSelectionUI();updateGeneNursery();snapshotCommand(before);setMode("curve");
-  const report="Seed "+seed+" · "+child.curves.length+" curves · "+child.livingMode;
+  curveSelectionUI();updateGeneNursery();snapshotCommand(before);setMode("curve");renderGeneGallery();
+  const report="Seed "+seed+" · G"+archived.record.generation+" · "+child.curves.length+" curves · "+child.livingMode;
   $("breedResult").textContent=report;
   status("Offspring born — "+report+" · existing pigment and fibers preserved");
 });
@@ -384,9 +562,47 @@ $("clearGeneParents").addEventListener("click",()=>{
   if(!engine.breederParents.some(Boolean)||!confirm("Clear all three captured parents? Current art will remain."))return;
   const before=engine.snapshot();
   engine.breederParents=cloneBreederParents();
-  syncBreedingField();updateGeneNursery();snapshotCommand(before);
+  engine.breederSources=cloneGeneSources();
+  syncBreedingField();updateGeneNursery();snapshotCommand(before);renderGeneGallery();
   $("breedResult").textContent="Nursery cleared";
-  status("Captured parent DNA cleared · living artwork preserved");
+  status("Parent slots cleared; archived family still safe");
+});
+$("saveGeneNow").addEventListener("click",()=>{
+  if(!engine.flowCurves.length){status("Draw or breed some curves first");return;}
+  const before=engine.snapshot();
+  try{
+    const parentRefs=selectedGeneId&&engine.geneGallery.some(e=>e.id===selectedGeneId)?
+      [{id:selectedGeneId,label:engine.geneGallery.find(e=>e.id===selectedGeneId).label}]:[];
+    const item=saveGenomeToAlbum(captureCurveGenome(engine),{
+      label:"Hand-sculpted "+engine.geneNextSequence,parents:parentRefs
+    });
+    syncBreedingField();snapshotCommand(before);renderGeneGallery();
+    status("Saved "+item.label+" into the album");
+  }catch(error){engine.release?.(before);status("Save failed: "+error.message);}
+});
+$("exportGeneBank").addEventListener("click",()=>{
+  try{
+    const blob=new Blob([serializeGeneBank(engine)],{type:"application/json"});
+    const url=URL.createObjectURL(blob),anchor=document.createElement("a");
+    anchor.href=url;anchor.download="volumetric-possession-family-album.json";
+    anchor.click();setTimeout(()=>URL.revokeObjectURL(url),7000);
+    status("Family JSON backup exported: math DNA only, no pigment");
+  }catch(error){status("Backup failed: "+error.message);}
+});
+$("importGeneBankButton").addEventListener("click",()=>$("importGeneBank").click());
+$("importGeneBank").addEventListener("change",event=>{
+  const file=event.target.files?.[0];if(!file)return;
+  if(file.size>400000){status("Backup too large (400 KB maximum)");return;}
+  file.text().then(text=>{
+    const bank=parseGeneBank(text);
+    if(!confirm("Restore this family JSON? This replaces your saved album and parent slots, not your artwork."))return;
+    const before=engine.snapshot();
+    Object.assign(engine,bank);syncBreedingField();
+    selectedGeneId=null;updateGeneNursery();snapshotCommand(before);renderGeneGallery();
+    $("breedResult").textContent="Family backup restored";
+    status("Imported "+engine.geneGallery.length+" archived specimens");
+  }).catch(error=>status("Import failed: "+error.message))
+    .finally(()=>{event.target.value="";});
 });
 $("livingMode").addEventListener("change",()=>{
   const next=$("livingMode").value;
@@ -539,9 +755,9 @@ $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click
 $("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
 for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;
 field.livingMode=engine.livingMode;
-field.livingMode=engine.livingMode;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();updateGeneNursery();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
+field.livingMode=engine.livingMode;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();updateGeneNursery();renderGeneGallery();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
 $("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(seed,$("genesis").value);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
-for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();updateGeneNursery();clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
+for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();updateGeneNursery();renderGeneGallery();clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
 document.addEventListener("keydown",event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redoStroke();else undoStroke();}});
 canvas.addEventListener("pointerdown",event=>{
@@ -749,7 +965,7 @@ try{
   $("turbulence").value=field.turbulence;
   $("turbulenceText").textContent=field.turbulence.toFixed(1);
   $("engineBadge").textContent=engineMode+" transport";
-  updateGeneNursery();curveSelectionUI();sculptSelectionUI();updateSculptMarkers();
+  restoreSavedGeneBank();updateGeneNursery();renderGeneGallery();curveSelectionUI();sculptSelectionUI();updateSculptMarkers();
   status(engineMode+" immersive volume ready · pinch to zoom, tap Controls for settings");
   requestAnimationFrame(frame);
 }catch(err){status("Cannot start volume: "+err.message);console.error(err);}
