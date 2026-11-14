@@ -8,7 +8,7 @@ export class PigmentField {
 
   constructor(seed=1226){
     this.a=new Float32Array(N*N*N*4);this.b=new Float32Array(this.a.length);
-    this.bytes=new Uint8Array(this.a.length);this.impulses=[];
+    this.bytes=new Uint8Array(this.a.length);this.impulses=[];this.turbulence=0;
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
   reset(seed,morphology=this.morphology){
@@ -63,10 +63,10 @@ export class PigmentField {
     }
     this.dirty=true;
   }
-  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,time:this.time,values:this.a.slice()};}
+  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
-    this.time=s.time;this.a.set(s.values);this.impulses.length=0;this.dirty=true;
+    this.time=s.time;this.turbulence=s.turbulence||0;this.a.set(s.values);this.impulses.length=0;this.dirty=true;
   }
   stamp(p,r,channel,amount=.38){
     const lo=p.map(v=>clamp(Math.floor((v-r+1)*N*.5),0,N-1));
@@ -110,6 +110,10 @@ export class PigmentField {
     }else{
       throw Error("Unknown motion field: "+this.flow);
     }
+    const h=this.turbulence||0;
+    vx+=h*.15*(Math.sin(4.1*z+t*.53+k)+.55*Math.cos(6.7*y-t*.39));
+    vy+=h*.15*(Math.sin(4.1*x-t*.47+k)+.55*Math.cos(6.7*z+t*.28));
+    vz+=h*.15*(Math.sin(4.1*y+t*.32+k)+.55*Math.cos(6.7*x-t*.37));
     // Touch impulses deliberately not claimed divergence-free; a later pressure
     // projection phase will handle physically constrained gestures.
     for(const impulse of this.impulses){

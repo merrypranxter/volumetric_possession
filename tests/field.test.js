@@ -100,3 +100,20 @@ test("each flow advects initialized 3D pigment while keeping density finite",()=
     assert.ok(diff>.01,mode+" did not transport material");
   }
 });
+
+test("analytic microturbulence remains divergence-free and actually changes flow",()=>{
+  const f=new PigmentField(188),h=.00015,v=[0,0,0],p=[.22,-.17,.49];
+  const baseline=(()=>{f.velocity(...p,1,v);return v.slice();})();
+  f.turbulence=1.25;f.velocity(...p,1,v);
+  assert.ok(v.some((q,i)=>Math.abs(q-baseline[i])>.001));
+  let divergence=0;
+  for(let axis=0;axis<3;axis++){
+    const a=p.slice(),b=p.slice();a[axis]+=h;b[axis]-=h;
+    f.velocity(...a,1,v);const va=v[axis];
+    f.velocity(...b,1,v);divergence+=(va-v[axis])/(2*h);
+  }
+  assert.ok(Math.abs(divergence)<.0002,"Turbulence divergence "+divergence);
+  const snapshot=f.snapshot();
+  f.turbulence=0;f.restore(snapshot);
+  assert.equal(f.turbulence,1.25);
+});

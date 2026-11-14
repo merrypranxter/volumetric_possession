@@ -37,7 +37,7 @@ select{width:100%;max-width:100%;background:#241b32}
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01B</span></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01C</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Interactive three-dimensional pigment volume"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 <div id="status" role="status">Preparing the volume…</div>
@@ -58,6 +58,7 @@ select{width:100%;max-width:100%;background:#241b32}
 </nav>
 <section class="panel open" id="motion">
 <div class="grid"><label>Flow law<select id="flow"><option value="cathedral">Vortex Cathedral</option><option value="beltrami">Beltrami Labyrinth</option><option value="countercurrent">Countercurrent Twins</option></select></label><label>Vortex strength <output id="speedText">1.0</output><input id="speed" type="range" min="0" max="2.4" step=".1" value="1"></label>
+<label>Fine turbulence <output id="turbulenceText">0.0</output><input id="turbulence" type="range" min="0" max="2" step=".1" value="0"></label>
 <label>Touch force <output id="forceText">1.0</output><input id="force" type="range" min=".2" max="3" step=".1" value="1"></label>
 <label>Brush radius <output id="brushText">0.22</output><input id="brush" type="range" min=".07" max=".5" step=".01" value=".22"></label>
 <label>Touch depth <output id="depthText">0.00</output><input id="depth" type="range" min="-.75" max=".75" step=".05" value="0"></label></div>
@@ -72,8 +73,10 @@ select{width:100%;max-width:100%;background:#241b32}
 <div class="grid"><label>Palette<select id="palette"></select></label>
 <label>Background<select id="background"><option value="0">Void black</option><option value="1">Midnight blue</option><option value="2">Deep plum</option></select></label>
 <label>Optical density <output id="densityText">4.5</output><input id="density" type="range" min=".5" max="10" step=".5" value="4.5"></label>
-<label>Emission <output id="glowText">1.2</output><input id="glow" type="range" min=".1" max="3" step=".1" value="1.2"></label></div>
-<p class="help">Starter palettes are bundled here. The full MATHEMAGICAL palette vault will be wired in after its canonical source is imported—no invented claim that all your palettes are already present.</p>
+<label>Emission <output id="glowText">1.2</output><input id="glow" type="range" min=".1" max="3" step=".1" value="1.2"></label>
+<label>Self-shadow <output id="shadowText">1.0</output><input id="shadow" type="range" min="0" max="4" step=".1" value="1"></label>
+<label>Light direction<select id="lightDirection"><option value="side">Side glow</option><option value="top">Overhead</option><option value="back">Backlight</option></select></label></div>
+<p class="help">A directional density probe creates approximate internal self-shadowing (not full multiple scattering). Starter palettes are bundled here. The full MATHEMAGICAL palette vault will be wired in after its canonical source is imported—no invented claim that all your palettes are already present.</p>
 </section>
 <p class="note">No hosting deployment or paid service required. WebGL2 is required for the volume view. PNG exports the current camera view; animated GIF/MP4 are later milestones.</p>
 </main>
