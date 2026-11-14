@@ -7,6 +7,7 @@ import {cloneBreederParents,DEFAULT_BREED_SEED} from "./curve-breeder.js";
 import {cloneGeneGallery,cloneGeneSources} from "./gene-gallery.js";
 import {normalizeTraitLocks} from "./trait-locks.js";
 import {cloneColorState} from "./color-control.js";
+import {cloneEchoes,queuePhantomEcho,advancePhantomEchoes} from "./phantom-echoes.js";
 // Persistent CPU 3D dye field. The analytic vortices are divergence-free individually.
 // Semi-Lagrangian transport is approximate and dissipative, not a Navier-Stokes solver.
 export const N = 28;
@@ -21,7 +22,7 @@ export class PigmentField {
     this.foldWrite=1.4;this.foldPersistence=.80;this.foldGrip=.35;
     this.fibers=new FiberMemory(N);this.fiberGrowth=2.3;this.fiberPersistence=.88;
     this.fiberBend=1;this.fiberGuidance=.65;this.fiberEnabled=true;
-    this.sculptNodes=[];this.flowCurves=[];
+    this.sculptNodes=[];this.flowCurves=[];this.echoes=[];
     this.livingMode="still";this.livingRate=.65;this.livingAmount=.18;this._stepCurves=null;
     this.breederParents=cloneBreederParents();this.breederSeed=DEFAULT_BREED_SEED;this.breedTraitLocks=normalizeTraitLocks();
     this.breederSources=cloneGeneSources();this.geneGallery=[];this.geneNextSequence=1;
@@ -32,7 +33,7 @@ export class PigmentField {
   reset(seed,morphology=this.morphology){
     const valid=["cathedral","gyroid","trefoil","braid"];
     if(!valid.includes(morphology))throw Error("Unknown genesis morphology: "+morphology);
-    this.seed=seed>>>0;this.morphology=morphology;this.time=0;this.impulses.length=0;
+    this.seed=seed>>>0;this.morphology=morphology;this.time=0;this.impulses.length=0;this.echoes.length=0;
     this.sculptNodes=[];this.flowCurves=[];this._stepCurves=null; // Restart clears authored geometry.
     this.fibers.reset();
     const rng=random(this.seed),sx=rng()*.32-.16,sy=rng()*.22-.11,sz=rng()*.30-.15;
@@ -90,7 +91,7 @@ export class PigmentField {
     livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount,
     breederParents:cloneBreederParents(this.breederParents),breederSeed:this.breederSeed,breedTraitLocks:normalizeTraitLocks(this.breedTraitLocks),
     breederSources:cloneGeneSources(this.breederSources),geneGallery:cloneGeneGallery(this.geneGallery),geneNextSequence:this.geneNextSequence,
-    colorGrade:cloneColorState(this.colorGrade),forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
+    echoes:cloneEchoes(this.echoes),colorGrade:cloneColorState(this.colorGrade),forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
     this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
@@ -105,7 +106,7 @@ export class PigmentField {
     this.breederParents=cloneBreederParents(s.breederParents);this.breederSeed=s.breederSeed??DEFAULT_BREED_SEED;this.breedTraitLocks=normalizeTraitLocks(s.breedTraitLocks);
     this.breederSources=cloneGeneSources(s.breederSources);
     this.geneGallery=cloneGeneGallery(s.geneGallery);this.geneNextSequence=s.geneNextSequence??1;
-    this.colorGrade=cloneColorState(s.colorGrade);
+    this.colorGrade=cloneColorState(s.colorGrade);this.echoes=cloneEchoes(s.echoes);
     this.forgeMode=FORGE_MODES.includes(s.forgeMode)?s.forgeMode:"rosette";
     this.forgePower=s.forgePower??.75;this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
     this.a.set(s.values);this.impulses.length=0;this.dirty=true;
@@ -132,6 +133,9 @@ export class PigmentField {
       for(let c=0;c<3;c++)this.a[i+c]=clamp(this.a[i+c]+color[c]*w,0,1);
     }
     this.dirty=true;
+  }
+  queueEcho(origin,direction,color,config,width,phase=0){
+    return queuePhantomEcho(this.echoes,origin,direction,color,this.time,config,width,phase);
   }
   push(p,v,r){this.impulses.push({p:p.slice(),v:v.slice(),r,ttl:.9});if(this.impulses.length>16)this.impulses.shift();}
 
@@ -183,6 +187,13 @@ export class PigmentField {
       this.livingMode,this.livingRate,this.livingAmount),x,y,z,t,out);
   }
   step(dt,speed){
+    // Real newborn 3D dye joins the existing material before advection.
+    // dt=0 must not spawn new echoes.
+    if(dt>0&&this.echoes.length){
+      const next=advancePhantomEchoes(this.echoes,this.time+dt);
+      this.echoes=next.queue;
+      for(const stamp of next.stamps)this.stampRGB(stamp.p,stamp.r,stamp.color);
+    }
     // Cache effective moving geometry ONCE per step, not per 28³ voxel.
     this._stepCurves=evaluateLivingCurves(this.flowCurves,this.time+dt,
       this.livingMode,this.livingRate,this.livingAmount);
