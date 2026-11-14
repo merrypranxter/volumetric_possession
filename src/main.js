@@ -1093,7 +1093,7 @@ canvas.addEventListener("pointerdown",event=>{
     curveIndex:-1,curveMoving:false,curveRaw:null,curveHandle:-1,curveTug:null};
   if(mode==="curve"){
     const handle=pickCurveHandle(event);
-    if(handle>=0){
+    if(handle>=0&&$("curveDragBehavior").value==="handle"){
       active.curveIndex=selectedCurve;active.curveHandle=handle;
       selectedHandle=handle;
       status("Bend control point "+(handle+1)+" · release to save one Undo step");
@@ -1104,6 +1104,8 @@ canvas.addEventListener("pointerdown",event=>{
         active.curveMoving=$("curveDragBehavior").value==="move";
         if(active.curveMoving){
           status("Move whole 3D strand · release to save one Undo step");
+        }else if($("curveDragBehavior").value==="handle"){
+          status("Strand selected · drag a glowing control dot in Edit Control Points");
         }else{
           active.curveTug={
             original:cloneFlowCurves([engine.flowCurves[found]])[0],
