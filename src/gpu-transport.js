@@ -4,6 +4,7 @@ import {N} from "./field.js";
 import {GPUFiberMemory} from "./gpu-fiber-memory.js";
 import {cloneSculptNodes} from "./flow-sculpt.js";
 import {cloneFlowCurves} from "./flow-curve.js";
+import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
@@ -221,7 +222,8 @@ export class GPUPigmentTransport{
    this.forgeWidth=source.forgeWidth??.17;this.forgePace=source.forgePace??.65;
    this.sculptNodes=cloneSculptNodes(source.sculptNodes||[]);
    this.flowCurves=cloneFlowCurves(source.flowCurves||[]);
-   this.flowCurves=cloneFlowCurves(source.flowCurves||[]);
+   this.livingMode=source.livingMode??"still";this.livingRate=source.livingRate??.65;
+   this.livingAmount=source.livingAmount??.18;this.liveCurves=this.flowCurves;
    this.impulses=[];this.pending=[];
    this.fibers=new GPUFiberMemory(renderer,VS,FS);
    renderer.externalSource=true;renderer.texture=this.front;
@@ -233,6 +235,10 @@ export class GPUPigmentTransport{
  push(p,v,r){this.impulses.push({p:p.slice(),v:v.slice(),r,ttl:.9});if(this.impulses.length>8)this.impulses.shift();}
  step(dt,speed){
    if(dt===0&&this.pending.length===0)return;
+   // Dynamic curve geometry is evaluated ONCE on the CPU, then uploaded as
+   // the existing bounded two-curve uniforms to BOTH GPU transport passes.
+   this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time+dt,
+      this.livingMode,this.livingRate,this.livingAmount);
    const gl=this.gl,U=this.loc;
    gl.useProgram(this.program);gl.bindVertexArray(this.vao);
    gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_3D,this.front);
@@ -262,9 +268,9 @@ export class GPUPigmentTransport{
    gl.uniform4fv(U.uSculptPos,sculptPos);
    gl.uniform4fv(U.uSculptInfo,sculptInfo);
    const curvePoints=new Float32Array(64),curveInfo=new Float32Array(8);
-   const nCurves=Math.min(2,this.flowCurves.length);
+   const nCurves=Math.min(2,this.liveCurves.length);
    for(let i=0;i<nCurves;i++){
-     const c=this.flowCurves[i];
+     const c=this.liveCurves[i];
      curveInfo.set([c.points.length,({stream:0,coil:1,gather:2})[c.type]??0,c.strength,c.r],i*4);
      for(let j=0;j<Math.min(8,c.points.length);j++)
        curvePoints.set([...c.points[j],0],i*32+j*4);
@@ -291,7 +297,7 @@ export class GPUPigmentTransport{
      foldGrip:this.foldGrip,fiberGrowth:this.fiberGrowth,
      fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
      fiberGuidance:this.fiberGuidance,impulses:this.impulses,sculptNodes:this.sculptNodes,
-     flowCurves:this.flowCurves
+     flowCurves:this.liveCurves
    });
    [this.front,this.back]=[this.back,this.front];this.renderer.texture=this.front;
    this.time+=dt;this.pending.splice(0,count);
@@ -318,7 +324,8 @@ export class GPUPigmentTransport{
      fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,
      fiberBend:this.fiberBend,fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,
      sculptNodes:cloneSculptNodes(this.sculptNodes),
-     flowCurves:cloneFlowCurves(this.flowCurves)};
+     flowCurves:cloneFlowCurves(this.flowCurves),
+     livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
@@ -332,6 +339,10 @@ export class GPUPigmentTransport{
    this.fiberEnabled=s.fiberEnabled??true;
    this.sculptNodes=cloneSculptNodes(s.sculptNodes||[]);
    this.flowCurves=cloneFlowCurves(s.flowCurves||[]);
+   this.livingMode=LIVING_MODES.includes(s.livingMode)?s.livingMode:"still";
+   this.livingRate=s.livingRate??.65;this.livingAmount=s.livingAmount??.18;
+   this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
+      this.livingMode,this.livingRate,this.livingAmount);
    this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
    this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
@@ -350,6 +361,11 @@ export class GPUPigmentTransport{
    this.fiberBend=source.fiberBend??1;this.fiberGuidance=source.fiberGuidance??.65;
    this.fiberEnabled=source.fiberEnabled??true;
    this.sculptNodes=cloneSculptNodes(source.sculptNodes||[]);
+   this.flowCurves=cloneFlowCurves(source.flowCurves||[]);
+   this.livingMode=LIVING_MODES.includes(source.livingMode)?source.livingMode:"still";
+   this.livingRate=source.livingRate??.65;this.livingAmount=source.livingAmount??.18;
+   this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
+      this.livingMode,this.livingRate,this.livingAmount);
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
 }
