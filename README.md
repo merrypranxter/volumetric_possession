@@ -2,17 +2,29 @@
 
 A touch-first, mobile-aware mathematical volumetric art studio.
 
-**Vision:** genuinely 3D pigment that evolves through persistent advection, interacts with artist-authored forces, and is rendered by integrating light through its volume—not a flat smoke sprite or an animated background.
+## Phase 01 — Living Volume
+**Current source:** `build/phase-01-living-volume` (not yet deployed). A pure static, no-build WebGL2 app with:
+- Persistent 28×28×28 three-channel pigment density; deterministic seeded torus/plume/ribbon.
+- CPU semi-Lagrangian dye advection (fixed 15 Hz), three analytic localized divergence-free vortices, temporary touch impulses.
+- WebGL2 3D texture and ray marching through the volume.
+- Stir, Inject and Orbit modes; pointer cancellation rollback; bounded checkpoint Undo/Redo; explicit reseed confirmation.
+- Eight **starter** palettes, independent optical density/emission, mobile render quality, single-frame PNG.
 
-## Current stage
-The repository is being initialized. Working prototype development happens on named feature branches before merging.
+## Run locally
+```sh
+git clone https://github.com/merrypranxter/volumetric_possession.git
+cd volumetric_possession
+git switch build/phase-01-living-volume
+python3 -m http.server 8080
+```
+Open http://localhost:8080 in a WebGL2 browser. (Do not open index.html as a file: ES modules require HTTP.) No dependencies or paid API.
 
-## Design principles
-- Actual evolving density/pigment state, independent of camera animation.
-- Clear distinctions between analytic divergence-free velocity fields, approximate advection, and future pressure-projected fluid dynamics.
-- WebGL2-first and iPhone Safari-conscious; no paid API, no automatic deployment.
-- Touch controls should alter substance or camera intentionally.
-- Reproducible seeds, reversible authored strokes, explicit reset.
-- High-resolution export and palette-vault integration are later milestones, not claims of current functionality.
+## Automated checks
+```sh
+node --test
+```
 
-See the development branch for source and architecture notes.
+See [architecture and QA notes](docs/ARCHITECTURE.md). Browser shader compile and real iPhone device performance **remain unverified**; do not treat this branch as a production deployment.
+
+## Deferred
+GPU velocity projection, gyroid/trefoil morphologies, coupling/equation mutation, true multi-scattering, full artist palette vault, exact loop animation and real GIF/MP4 encoding. Please do not relabel a WebM as MP4 or claim a seamless state loop until proven.

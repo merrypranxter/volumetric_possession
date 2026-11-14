@@ -16,7 +16,7 @@ const paletteSelect=$("palette");for(const name of Object.keys(palettes)){const 
 const canvas=$("art"),field=new PigmentField(1226);
 let renderer,paused=false,mode="stir",active=null,lastFrame=0,lastDraw=0,accumulator=0;
 const camera={azimuth:.62,elevation:.23,distance:3.25};
-const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,steps:56,background:[0.009,.006,.023]};
+const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,steps:50,background:[0.009,.006,.023]};
 const undo=[],redo=[];
 const status=text=>$("status").textContent=text;
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
@@ -38,7 +38,7 @@ for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>
 for(const id of ["speed","force","brush","depth","density","glow"]){
   $(id).addEventListener("input",()=>{const val=Number($(id).value);const key=id==="density"?"gain":id;options[key]=val;$(id+"Text").textContent=val.toFixed(id==="brush"||id==="depth"?2:1);});
 }
-$("quality").addEventListener("change",()=>options.steps=({low:40,mid:56,high:76})[$("quality").value]);
+$("quality").addEventListener("change",()=>options.steps=({low:36,mid:50,high:72})[$("quality").value]);
 $("background").addEventListener("change",draw);paletteSelect.addEventListener("change",draw);
 $("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Play":"Ⅱ Pause";status(paused?"Simulation paused":"Simulation resumed");});
 $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click",redoStroke);
@@ -94,7 +94,7 @@ function frame(timestamp){
     const elapsed=Math.min((timestamp-lastFrame)/1000,.1);lastFrame=timestamp;
     if(!paused){
       accumulator+=elapsed;
-      let n=0;while(accumulator>=1/18&&n<3){field.step(1/18,options.speed);accumulator-=1/18;n++;}
+      let n=0;while(accumulator>=1/15&&n<3){field.step(1/15,options.speed);accumulator-=1/15;n++;}
       if(n===3)accumulator=0;
     }
     if(timestamp-lastDraw>38){draw();lastDraw=timestamp;}

@@ -1,8 +1,8 @@
 # Phase 01 — Living Volume
 
 ## Verified scope to build
-- Persistent 40³ pigment volume, three individually addressable dye channels, seeded 3D torus/plume/ribbon initial conditions.
-- Semi-Lagrangian backward tracing at a fixed 18 Hz (trilinear CPU sampling); normalized 8-bit RGBA uploaded to a WebGL2 3D texture.
+- Persistent 28³ pigment volume, three individually addressable dye channels, seeded 3D torus/plume/ribbon initial conditions.
+- Semi-Lagrangian backward tracing at a fixed 15 Hz (trilinear CPU sampling); normalized 8-bit RGBA uploaded to a WebGL2 3D texture.
 - Three time-dependent localized rotational fields: \(v=\omega(a\times(p-c))\exp(-\|p-c\|^2/s^2)\). For fixed a and c, each analytic field is divergence-free because \((a\times(p-c))\cdot(p-c)=0\); Wolfram symbolic divergence check returned 0 for the y-axis example.
 - Temporary bounded touch impulses (not individually divergence-free); pigment painting; camera-only orbit.
 - Ray/box intersection and front-to-back Beer–Lambert-inspired opacity integration, approximate 1-offset light shading, emission control.
