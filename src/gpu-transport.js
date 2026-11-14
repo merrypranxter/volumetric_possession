@@ -9,6 +9,7 @@ import {cloneBreederParents,DEFAULT_BREED_SEED} from "./curve-breeder.js";
 import {cloneGeneGallery,cloneGeneSources} from "./gene-gallery.js";
 import {normalizeTraitLocks} from "./trait-locks.js";
 import {cloneColorState} from "./color-control.js";
+import {cloneEchoes,queuePhantomEcho,advancePhantomEchoes} from "./phantom-echoes.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
@@ -234,7 +235,7 @@ export class GPUPigmentTransport{
    this.breederSources=cloneGeneSources(source.breederSources);
    this.geneGallery=cloneGeneGallery(source.geneGallery);this.geneNextSequence=source.geneNextSequence??1;
    this.colorGrade=cloneColorState(source.colorGrade);
-   this.impulses=[];this.pending=[];
+   this.impulses=[];this.pending=[];this.echoes=cloneEchoes(source.echoes);
    this.fibers=new GPUFiberMemory(renderer,VS,FS);
    renderer.externalSource=true;renderer.texture=this.front;
  }
@@ -250,9 +251,19 @@ export class GPUPigmentTransport{
    this.pending.push({p:p.slice(),r:Math.min(.7,Math.max(.02,r)),color:color.slice()});
    if(this.pending.length>64)this.pending.shift();
  }
+ queueEcho(origin,direction,color,config,width,phase=0){
+   return queuePhantomEcho(this.echoes,origin,direction,color,this.time,config,width,phase);
+ }
  push(p,v,r){this.impulses.push({p:p.slice(),v:v.slice(),r,ttl:.9});if(this.impulses.length>8)this.impulses.shift();}
  step(dt,speed){
    if(dt===0&&this.pending.length===0)return;
+   if(dt>0&&this.echoes.length){
+     // Existing touch stamps take priority; cap the combined count at 16.
+     const budget=Math.min(6,Math.max(0,16-this.pending.length));
+     const next=advancePhantomEchoes(this.echoes,this.time+dt,budget);
+     this.echoes=next.queue;
+     for(const stamp of next.stamps)this.stampRGB(stamp.p,stamp.r,stamp.color);
+   }
    // Dynamic curve geometry is evaluated ONCE on the CPU, then uploaded as
    // the existing bounded two-curve uniforms to BOTH GPU transport passes.
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time+dt,
@@ -347,7 +358,7 @@ export class GPUPigmentTransport{
      breederParents:cloneBreederParents(this.breederParents),breederSeed:this.breederSeed,
      breedTraitLocks:normalizeTraitLocks(this.breedTraitLocks),
      breederSources:cloneGeneSources(this.breederSources),geneGallery:cloneGeneGallery(this.geneGallery),geneNextSequence:this.geneNextSequence,
-     colorGrade:cloneColorState(this.colorGrade)};
+     colorGrade:cloneColorState(this.colorGrade),echoes:cloneEchoes(this.echoes)};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
@@ -368,7 +379,7 @@ export class GPUPigmentTransport{
    this.breedTraitLocks=normalizeTraitLocks(s.breedTraitLocks);
    this.breederSources=cloneGeneSources(s.breederSources);
    this.geneGallery=cloneGeneGallery(s.geneGallery);this.geneNextSequence=s.geneNextSequence??1;
-   this.colorGrade=cloneColorState(s.colorGrade);
+   this.colorGrade=cloneColorState(s.colorGrade);this.echoes=cloneEchoes(s.echoes);
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
       this.livingMode,this.livingRate,this.livingAmount);
    this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
@@ -398,7 +409,7 @@ export class GPUPigmentTransport{
    this.breederSources=cloneGeneSources(source.breederSources);
    this.geneGallery=cloneGeneGallery(source.geneGallery);
    this.geneNextSequence=source.geneNextSequence??1;
-   this.colorGrade=cloneColorState(source.colorGrade);
+   this.colorGrade=cloneColorState(source.colorGrade);this.echoes=cloneEchoes(source.echoes);
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
       this.livingMode,this.livingRate,this.livingAmount);
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
