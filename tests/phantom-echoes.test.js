@@ -97,6 +97,9 @@ test("GPU transport uses existing RGB stamp uniforms and preserves births throug
   assert.match(gpu,/Math\.max\(0,16-this\.pending\.length\)/);
   assert.match(main,/if\(\(active\.afterlifeDeposits\+i\+1\)%4===0/);
   assert.match(main,/engine\.queueEcho\(/);
-  for(const id of ["echoMode","echoCopies","echoDelay","echoDrift","echoDuration","echoStrength"])
+  for(const id of ["echoMode","echoCopies","echoDelay","echoDrift","echoDuration","echoStrength","clearEchoes","echoCount"])
     assert.ok(ui.includes('id="'+id+'"'),id);
+  assert.match(main,/\$\("clearEchoes"\)\.addEventListener\("click"/);
+  assert.match(main,/engine\.echoes\.length=0/);
+  assert.match(main,/snapshotCommand\(before\)/);
 });
