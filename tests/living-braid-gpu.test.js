@@ -101,3 +101,22 @@ test("GPU scene checkpoint, Undo and Reset preserve the 3-parent family album",(
  assert.equal(gpu.geneNextSequence,4);
  assert.equal(stats().reads,0);
 });
+
+test("GPU checkpoints and Restart preserve selective genetic donor locks with no new shaders",()=>{
+ const {gl,stats}=mockGL();
+ const source=new PigmentField(41);
+ source.breedTraitLocks={topology:"1",shape:"0",force:"2",material:"1",motion:"0",dynamics:"2"};
+ const renderer={gl,texture:gl.createTexture(),fiberTexture:gl.createTexture()};
+ const gpu=new GPUPigmentTransport(renderer,source);
+ assert.deepEqual(gpu.breedTraitLocks,source.breedTraitLocks);
+ const checkpoint=gpu.snapshot();
+ gpu.breedTraitLocks={topology:"auto",shape:"auto",force:"auto",material:"auto",motion:"auto",dynamics:"auto"};
+ gpu.restore(checkpoint);
+ assert.deepEqual(gpu.breedTraitLocks,source.breedTraitLocks);
+ assert.equal(stats().copies,N*4);
+ gpu.release(checkpoint);
+ source.reset(42);gpu.reset(source);
+ assert.deepEqual(gpu.breedTraitLocks,source.breedTraitLocks);
+ assert.equal(stats().reads,0);
+ assert.equal(stats().draws,0,"gene changes must not cause a simulation draw");
+});

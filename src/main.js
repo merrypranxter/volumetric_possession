@@ -7,6 +7,7 @@ import {cloneFlowCurves} from "./flow-curve.js";
 import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
 import {BREEDER_SLOTS,DEFAULT_BREED_SEED,captureCurveGenome,cloneCurveGenome,cloneBreederParents,breedCurveGenomes,nurseryStarters} from "./curve-breeder.js";
 import {GALLERY_LIMIT,GENE_STORAGE_KEY,cloneGeneGallery,cloneGeneSources,addGeneSpecimen,editGeneSpecimen,removeGeneSpecimen,genealogicalChain,serializeGeneBank,parseGeneBank} from "./gene-gallery.js";
+import {TRAIT_KEYS,TRAIT_LABELS,normalizeTraitLocks,breedWithTraitLocks} from "./trait-locks.js";
 import {GPUPigmentTransport} from "./gpu-transport.js";
 const $=id=>document.getElementById(id);
 const palettes={
@@ -35,6 +36,24 @@ const structuralControls=["foldWrite","foldPersistence","foldGrip","forgePower",
 function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower","forgeWidth","forgePace","fiberPersistence","fiberGuidance","livingRate","livingAmount"].includes(id)?2:1;}
 const touches=new Map();
 let selectedSculpt=-1,selectedCurve=-1,selectedHandle=-1,selectedGeneId=null;
+let previewChild=null,previewSignature=null;
+const traitSelectors={topology:"traitTopology",shape:"traitShape",force:"traitForce",
+  material:"traitMaterial",motion:"traitMotion",dynamics:"traitDynamics"};
+function invalidateChildPreview(){
+  previewChild=null;previewSignature=null;
+  $("hatchGene").disabled=true;
+  $("traitReceipt").textContent="Preview needs refreshing · no artwork changed";
+}
+function syncTraitControls(){
+  const locks=normalizeTraitLocks(engine.breedTraitLocks);
+  for(const key of TRAIT_KEYS){
+    const select=$(traitSelectors[key]);
+    select.value=locks[key];
+    for(const option of select.options){
+      if(option.value!=="auto")option.disabled=!engine.breederParents[Number(option.value)];
+    }
+  }
+}
 const displayFlowCurves=()=>evaluateLivingCurves(engine.flowCurves,engine.time,
   engine.livingMode,engine.livingRate,engine.livingAmount);
 const sculptMarkerContainer=$("sculptMarkers");
@@ -119,6 +138,9 @@ function updateGeneNursery(){
       parent.curves.map(c=>c.type).join(" / ")+" · "+parent.livingMode:"Empty";
   }
   $("breedChild").disabled=count<2;
+  $("previewGene").disabled=count<2;
+  syncTraitControls();
+  invalidateChildPreview();
   $("clearGeneParents").disabled=count===0;
   $("breedSeed").value=engine.breederSeed??DEFAULT_BREED_SEED;
 }
@@ -126,6 +148,7 @@ function syncBreedingField(){
   if(engine===field)return;
   field.breederParents=cloneBreederParents(engine.breederParents);
   field.breederSeed=engine.breederSeed;
+  field.breedTraitLocks=normalizeTraitLocks(engine.breedTraitLocks);
   field.breederSources=cloneGeneSources(engine.breederSources);
   field.geneGallery=cloneGeneGallery(engine.geneGallery);
   field.geneNextSequence=engine.geneNextSequence;
@@ -178,6 +201,11 @@ function renderGeneGallery(){
   if(selected){
     const chain=genealogicalChain(gallery,selected.id,4);
     const textLines=chain.map((n,i)=>"  ".repeat(n.depth)+(n.depth?"↳ ":"")+"G"+n.generation+" · "+n.label+" ("+n.id+")");
+    if(selected.inheritance&&Object.values(selected.inheritance).some(v=>v!=="Auto")){
+      const receipt=TRAIT_KEYS.map(k=>selected.inheritance[k]&&selected.inheritance[k]!=="Auto"?
+        TRAIT_LABELS[k]+" ← "+selected.inheritance[k]:null).filter(Boolean);
+      if(receipt.length)textLines.push("  Trait heists: "+receipt.join(" · "));
+    }
     const missing=selected.parents.filter(p=>p.id&&!byId.has(p.id));
     if(missing.length)textLines.push("  ↳ Earlier ancestors not in album: "+missing.map(x=>x.label).join(", "));
     $("geneTree").textContent=textLines.join("\n")+"\n"+(selected.seed===null?"Hand-authored / starter DNA":"Birth seed "+selected.seed);
@@ -495,6 +523,7 @@ $("loadGeneStarters").addEventListener("click",()=>{
 });
 $("breedMutation").addEventListener("input",()=>{
   $("breedMutationText").textContent=Number($("breedMutation").value).toFixed(2);
+  invalidateChildPreview();
 });
 $("breedSeed").addEventListener("change",()=>{
   const n=Number($("breedSeed").value);
@@ -504,33 +533,85 @@ $("breedSeed").addEventListener("change",()=>{
   if(n===engine.breederSeed)return;
   const before=engine.snapshot();
   engine.breederSeed=n>>>0;field.breederSeed=engine.breederSeed;
-  snapshotCommand(before);
+  snapshotCommand(before);invalidateChildPreview();
   status("Breeding seed set to "+engine.breederSeed);
 });
-$("breedChild").addEventListener("click",()=>{
-  const available=engine.breederParents.filter(Boolean).length;
-  if(available<2){status("Capture two parents or load the starter nursery");return;}
+
+for(const key of TRAIT_KEYS){
+  $(traitSelectors[key]).addEventListener("change",()=>{
+    const value=$(traitSelectors[key]).value;
+    if(value!=="auto"&&!engine.breederParents[Number(value)]){
+      $(traitSelectors[key]).value=engine.breedTraitLocks[key];
+      status("That donor parent slot is empty");return;
+    }
+    if(value===engine.breedTraitLocks[key])return;
+    const before=engine.snapshot();
+    engine.breedTraitLocks=normalizeTraitLocks({...engine.breedTraitLocks,[key]:value});
+    syncBreedingField();snapshotCommand(before);invalidateChildPreview();
+    status(TRAIT_LABELS[key]+": "+(value==="auto"?"automatic inheritance":"locked to Parent "+String.fromCharCode(65+Number(value))));
+  });
+}
+$("resetTraitLocks").addEventListener("click",()=>{
+  const fresh=normalizeTraitLocks();
+  if(JSON.stringify(fresh)===JSON.stringify(engine.breedTraitLocks))return;
+  const before=engine.snapshot();engine.breedTraitLocks=fresh;
+  syncBreedingField();syncTraitControls();snapshotCommand(before);invalidateChildPreview();
+  status("All six trait channels returned to automatic crossover");
+});
+$("breedDominance").addEventListener("change",invalidateChildPreview);
+function birthInputs(){
+  if(engine.breederParents.filter(Boolean).length<2)throw Error("Capture two parents or load starters");
   const seed=Number($("breedSeed").value);
-  if(!Number.isInteger(seed)||seed<0||seed>0xffffffff){
-    status("Enter a whole-number breeding seed between 0 and 4294967295");return;
-  }
-  const dominant=$("breedDominance").value;
-  if(dominant!=="balanced"&&!engine.breederParents[Number(dominant)]){
-    status("That dominant parent slot is empty");return;
-  }
+  if(!Number.isInteger(seed)||seed<0||seed>0xffffffff)throw Error("Seed must be a 32-bit unsigned integer");
+  const dominance=$("breedDominance").value;
+  if(dominance!=="balanced"&&!engine.breederParents[Number(dominance)])
+    throw Error("Dominant parent slot is empty");
   const mutation=Number($("breedMutation").value);
-  const child=breedCurveGenomes(engine.breederParents,seed,mutation,dominant);
-  // Archive the child BEFORE touching the live material. Favorite-only full
-  // archives reject birth clearly instead of silently losing specimens.
+  if(!Number.isFinite(mutation)||mutation<0||mutation>.5)
+    throw Error("Mutation must be from 0 to 0.5");
+  const locks=normalizeTraitLocks(engine.breedTraitLocks);
+  for(const key of TRAIT_KEYS){
+    const value=locks[key];
+    if(value!=="auto"&&!engine.breederParents[Number(value)])
+      throw Error(TRAIT_LABELS[key]+" donor is empty");
+  }
+  return {seed,dominance,mutation,locks,
+    signature:JSON.stringify({seed,dominance,mutation,locks,parents:engine.breederParents})};
+}
+function candidateReceipt(child){
+  const details=TRAIT_KEYS.map(key=>TRAIT_LABELS[key]+": "+child.inheritance[key]);
+  return child.curves.length+" strands · "+child.curves.map(c=>c.type).join("+")+
+    " · "+child.livingMode+" · "+details.join(" · ")+
+    (child.notes.length?" · "+child.notes.join("; "):"");
+}
+function generateChild(inputs){
+  return breedWithTraitLocks(engine.breederParents,
+    inputs.seed,inputs.mutation,inputs.dominance,inputs.locks);
+}
+$("previewGene").addEventListener("click",()=>{
+  try{
+    const inputs=birthInputs(),child=generateChild(inputs);
+    previewChild=child;previewSignature=inputs.signature;
+    albumPreview($("traitPreviewCanvas"),child);
+    $("traitReceipt").textContent="👁 "+candidateReceipt(child)+
+      " · seed "+inputs.seed+" (not yet born)";
+    $("hatchGene").disabled=false;
+    status("Preview only · no pigment, seed, or archive changed");
+  }catch(error){invalidateChildPreview();status("Preview failed: "+error.message);}
+});
+function hatchOffspring(child,seed,mutation,dominance){
+  // Build archive before touching material; full favorite-only galleries
+  // reject birth safely without changing active curves or texture state.
   let archived;
   try{
     const parents=(engine.breederSources||[]).map((ref,i)=>engine.breederParents[i]?
       ref||{id:null,label:"Unsaved Parent "+String.fromCharCode(65+i)}:null).filter(Boolean);
     archived=addGeneSpecimen(engine.geneGallery,child,{
       sequence:engine.geneNextSequence,parents,seed,mutation,
+      traitLocks:child.traitLocks,inheritance:child.inheritance,
       label:"Mutant "+engine.geneNextSequence+" · seed "+seed
     });
-  }catch(error){status("Birth not archived: "+error.message);return;}
+  }catch(error){status("Birth not archived: "+error.message);return false;}
   const before=engine.snapshot();
   engine.geneGallery=archived.gallery;
   engine.geneNextSequence=archived.nextSequence;
@@ -556,7 +637,24 @@ $("breedChild").addEventListener("click",()=>{
   curveSelectionUI();updateGeneNursery();snapshotCommand(before);setMode("curve");renderGeneGallery();
   const report="Seed "+seed+" · G"+archived.record.generation+" · "+child.curves.length+" curves · "+child.livingMode;
   $("breedResult").textContent=report;
-  status("Offspring born — "+report+" · existing pigment and fibers preserved");
+  status("Offspring born — "+report+" · inherited force laws, existing pigment preserved");
+  return true;
+}
+$("hatchGene").addEventListener("click",()=>{
+  try{
+    const inputs=birthInputs();
+    if(!previewChild||previewSignature!==inputs.signature){
+      invalidateChildPreview();status("Preview changed; preview the child again before hatching");return;
+    }
+    hatchOffspring(previewChild,inputs.seed,inputs.mutation,inputs.dominance);
+  }catch(error){status("Hatch failed: "+error.message);}
+});
+$("breedChild").addEventListener("click",()=>{
+  try{
+    const inputs=birthInputs();
+    const child=generateChild(inputs);
+    hatchOffspring(child,inputs.seed,inputs.mutation,inputs.dominance);
+  }catch(error){status("Breeding failed: "+error.message);}
 });
 $("clearGeneParents").addEventListener("click",()=>{
   if(!engine.breederParents.some(Boolean)||!confirm("Clear all three captured parents? Current art will remain."))return;

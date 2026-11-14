@@ -125,7 +125,7 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / MUTANT FAMILY ALBUM 01N</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / TRAIT HEIST 01O</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div id="sculptMarkers" aria-hidden="true"></div><canvas id="curveOverlay" aria-hidden="true"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -255,11 +255,32 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 <input id="breedMutation" type="range" min="0" max=".5" step=".01" value=".22"></label>
 <label>Birth report <output id="breedResult">Awaiting parents</output></label>
 </div>
+<details class="subsystem" id="traitHeistPanel">
+<summary>🧬 Trait Heist · steal specific genes</summary>
+<p class="help">Auto keeps the original genetic crossover. A/B/C locks a trait to that parent, even when the other traits come from somebody else.</p>
+<div class="grid">
+<label>Curve count<select id="traitTopology"><option value="auto">Auto mix</option><option value="0">Parent A</option><option value="1">Parent B</option><option value="2">Parent C</option></select></label>
+<label>3D shape<select id="traitShape"><option value="auto">Auto mix</option><option value="0">Parent A</option><option value="1">Parent B</option><option value="2">Parent C</option></select></label>
+<label>Force law<select id="traitForce"><option value="auto">Auto mix</option><option value="0">Parent A</option><option value="1">Parent B</option><option value="2">Parent C</option></select></label>
+<label>Width + strength<select id="traitMaterial"><option value="auto">Auto mix</option><option value="0">Parent A</option><option value="1">Parent B</option><option value="2">Parent C</option></select></label>
+<label>Living motion<select id="traitMotion"><option value="auto">Auto mix</option><option value="0">Parent A</option><option value="1">Parent B</option><option value="2">Parent C</option></select></label>
+<label>Speed + excursion<select id="traitDynamics"><option value="auto">Auto mix</option><option value="0">Parent A</option><option value="1">Parent B</option><option value="2">Parent C</option></select></label>
+</div>
+<div class="actionbar"><button type="button" id="resetTraitLocks">↺ All Auto</button></div>
+<p class="help">Locked shape/force traits are copied faithfully; the Mutation slider still changes any unlocked traits. Paired motion on a one-strand baby uses Writhe instead.</p>
+</details>
+<div class="actionbar">
+<button id="previewGene" type="button">👁 Preview child</button>
+<button id="hatchGene" type="button" disabled>🐣 Hatch preview</button>
+</div>
+<canvas id="traitPreviewCanvas" width="240" height="104" class="gene-thumb" role="img" aria-label="Static preview of the candidate's three-dimensional paths"></canvas>
+<p id="traitReceipt" class="gene-archive-note">Choose parents and press Preview; existing material will not change.</p>
 <div class="actionbar">
 <button id="loadGeneStarters" type="button">✦ Load weird starter parents</button>
-<button id="breedChild" type="button">🧬 Breed new offspring</button>
+<button id="breedChild" type="button">🧬 Breed new offspring (direct)</button>
 <button id="clearGeneParents" type="button">Clear nursery</button>
 </div>
+<p class="help">Preview is mathematical DNA only—no GPU volume mutation, no seed advancement, no gallery slot used. Hatch commits exactly the previewed child and archives it. The original Breed button still creates a child immediately. Trait locks save with your gene bank and are Undoable.</p>
 <p class="help">Breed from any 2 or 3 captured parents. A seed deterministically produces one editable child with one or two curves—never more than this phone-friendly engine supports. Geometry crossovers use arc-length registration, inherited force traits, smooth correlated mutations, and separate motion inheritance. Offspring replaces only active curve DNA and motion; **your existing pigment and fiber memory stay untouched**. Each birth is Undoable. Breeding advances the seed; enter an earlier seed to recreate that child. Starters populate all three slots instantly.</p>
 <details class="subsystem" id="geneAlbumPanel" open>
 <summary>🧿 Mutant Family Album · <output id="geneAlbumCount">0 / 24</output></summary>
