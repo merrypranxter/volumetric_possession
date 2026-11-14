@@ -14,7 +14,7 @@ uniform vec3 uEye,uForward,uRight,uUp,uA,uB,uC,uBg;
 uniform float uAspect,uGain,uGlow,uShadow;
 uniform vec3 uLightDir;
 uniform vec2 uCanvasSize;
-uniform int uSteps;
+uniform int uSteps,uLightSteps;
 void main(){
   vec2 uv=(gl_FragCoord.xy/uCanvasSize)*2.0-1.0;
   vec3 direction=normalize(uForward*1.55+uRight*uv.x*uAspect+uUp*uv.y);
@@ -33,8 +33,21 @@ void main(){
       vec3 dye=texture(uVolume,sampleUV).rgb;
       float mass=dye.r+dye.g+dye.b;
       if(mass>.008){
-        float upstream=dot(texture(uVolume,clamp(sampleUV+uLightDir*.075,vec3(0.0),vec3(1.0))).rgb,vec3(1.0));
-        float shade=clamp(.83+1.8*(mass-upstream),.3,1.35)*exp(-uShadow*upstream*.56);
+        // Integrate optical depth toward the light: 1/2/4 taps by quality.
+        // This is an art-directed single-scattering approximation, not a full solver.
+        vec3 lightVec=normalize(uLightDir);
+        float opticalDepth=0.0;
+        float sampleCount=0.0;
+        for(int li=0;li<4;li++){
+          if(li>=uLightSteps)break;
+          vec3 lightUV=sampleUV+lightVec*(.045+float(li)*.085);
+          if(any(lessThan(lightUV,vec3(0.0)))||any(greaterThan(lightUV,vec3(1.0))))break;
+          opticalDepth+=dot(texture(uVolume,lightUV).rgb,vec3(.3333333));
+          sampleCount+=1.0;
+        }
+        float nearDepth=opticalDepth/max(sampleCount,1.0);
+        float shade=clamp(.90+1.65*(mass*.333333-nearDepth),.35,1.4)
+                  *exp(-uShadow*opticalDepth*.68);
         vec3 pigment=(dye.r*uA+dye.g*uB+dye.b*uC)/max(mass,.0001);
         float alpha=1.0-exp(-mass*uGain*stride);
         accum+=trans*alpha*pigment*shade*(.76+uGlow*.42);
@@ -84,7 +97,7 @@ export class VolumeRenderer{
     if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error("GL link: "+gl.getProgramInfoLog(prog));
     gl.deleteShader(vs);gl.deleteShader(fs);this.prog=prog;
     this.locations={};
-    for(const name of ["uVolume","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uAspect","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow"])this.locations[name]=gl.getUniformLocation(prog,name);
+    for(const name of ["uVolume","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uAspect","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow","uLightSteps"])this.locations[name]=gl.getUniformLocation(prog,name);
     this.texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.texture);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
@@ -113,6 +126,7 @@ export class VolumeRenderer{
     gl.uniform3fv(U.uA,colors[0]);gl.uniform3fv(U.uB,colors[1]);gl.uniform3fv(U.uC,colors[2]);gl.uniform3fv(U.uBg,opts.background);
     gl.uniform1f(U.uAspect,w/h);gl.uniform1f(U.uGain,opts.gain);gl.uniform1f(U.uGlow,opts.glow);
     gl.uniform1i(U.uSteps,opts.steps);gl.uniform2f(U.uCanvasSize,w,h);
-    gl.uniform3fv(U.uLightDir,opts.lightDir);gl.uniform1f(U.uShadow,opts.shadow);gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.uniform3fv(U.uLightDir,opts.lightDir);gl.uniform1f(U.uShadow,opts.shadow);
+    gl.uniform1i(U.uLightSteps,opts.lightSteps||1);gl.drawArrays(gl.TRIANGLES,0,3);
   }
 }

@@ -9,7 +9,8 @@ A touch-first, mobile-aware mathematical volumetric art studio.
 - Three selectable divergence-free baseline fields (localized vortex, ABC/Beltrami-type, paired countercurrent), plus independently controlled divergence-free analytic microturbulence and localized touch impulses.
 - WebGL2 3D texture and ray marching through the volume.
 - Stir, Inject and Orbit modes; pointer cancellation rollback; bounded checkpoint Undo/Redo (GPU copies remain on GPU); explicit reseed confirmation.
-- Approximate directional self-shadowing, three light directions, emission, optical density. Shader and actual device rendering still require QA.
+- Phase 01D: Fast/Euler or Curved/Midpoint characteristic backtracing, selectable without replacing pigment. The midpoint option evaluates velocity twice per sample (extra CPU/GPU cost); neither mode guarantees mass conservation.
+- Multi-tap directional volumetric light attenuation (1, 2, or 4 density probes per active ray sample for Mobile / Balanced / Detailed), three light directions, emission and optical density. Real device rendering and speed still require QA.
 - Eight **starter** palettes, independent optical density/emission, mobile render quality, single-frame PNG.
 
 ## Run locally

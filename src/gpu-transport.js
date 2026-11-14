@@ -9,11 +9,11 @@ precision highp float;
 precision highp sampler3D;
 uniform sampler3D uPrev;
 uniform float uLayer,uDim,uTime,uDt,uSpeed,uSeedPhase,uTurb;
-uniform int uFlow,uImpulseCount,uStampCount;
+uniform int uFlow,uImpulseCount,uStampCount,uIntegrator;
 uniform vec4 uImpulsePos[8],uImpulseVel[8],uStampPos[16],uStampColor[16];
 out vec4 fragColor;
-vec3 velocity(vec3 p){
- float x=p.x,y=p.y,z=p.z,t=uTime,k=uSeedPhase;
+vec3 velocity(vec3 p,float t){
+ float x=p.x,y=p.y,z=p.z,k=uSeedPhase;
  vec3 v=vec3(0.0);
  if(uFlow==0){
    vec3 a=vec3(x-sin(t*.24+k)*.22,y,z);
@@ -49,7 +49,12 @@ vec3 velocity(vec3 p){
 }
 void main(){
  vec3 pos=vec3(2.0*gl_FragCoord.xy/uDim-1.0,2.0*(uLayer+.5)/uDim-1.0);
- vec3 back=clamp(pos-velocity(pos)*uDt,vec3(-1),vec3(1));
+ vec3 v=velocity(pos,uTime+uDt);
+ if(uIntegrator==1){
+   vec3 mid=pos-v*(.5*uDt);
+   v=velocity(mid,uTime+.5*uDt);
+ }
+ vec3 back=clamp(pos-v*uDt,vec3(-1),vec3(1));
  vec3 dye=texture(uPrev,back*.5+.5).rgb*exp(-.019*uDt);
  for(int i=0;i<16;i++){
    if(i>=uStampCount)break;
@@ -88,11 +93,11 @@ export class GPUPigmentTransport{
    gl.deleteShader(v);gl.deleteShader(f);
    if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error("GPU transport link: "+gl.getProgramInfoLog(p));
    this.program=p;this.vao=gl.createVertexArray();this.loc={};
-   const names=["uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
+   const names=["uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
    for(const n of names)this.loc[n]=gl.getUniformLocation(p,n);
    for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
    this.time=source.time;this.seed=source.seed;this.morphology=source.morphology;this.flow=source.flow;
-   this.turbulence=0;this.impulses=[];this.pending=[];
+   this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";this.impulses=[];this.pending=[];
    renderer.externalSource=true;renderer.texture=this.front;
  }
  stamp(p,r,channel,amount=.38){
@@ -108,6 +113,7 @@ export class GPUPigmentTransport{
    gl.uniform1i(U.uPrev,1);gl.uniform1f(U.uTime,this.time);gl.uniform1f(U.uDt,dt);
    gl.uniform1f(U.uSpeed,speed);gl.uniform1f(U.uDim,N);gl.uniform1f(U.uSeedPhase,this.seed*.000017);
    gl.uniform1f(U.uTurb,this.turbulence);gl.uniform1i(U.uFlow,FLOW[this.flow]??0);
+   gl.uniform1i(U.uIntegrator,this.integration==="midpoint"?1:0);
    const pp=new Float32Array(32),pv=new Float32Array(32);
    for(let i=0;i<this.impulses.length;i++){const s=this.impulses[i];pp.set([...s.p,s.r],i*4);pv.set([...s.v,s.ttl],i*4);}
    gl.uniform1i(U.uImpulseCount,this.impulses.length);gl.uniform4fv(U.uImpulsePos,pp);gl.uniform4fv(U.uImpulseVel,pv);
@@ -139,12 +145,12 @@ export class GPUPigmentTransport{
  }
  snapshot(){
    const texture=volume(this.gl);this.copyVolume(this.front,texture);
-   return {kind:"gpu",texture,time:this.time,seed:this.seed,flow:this.flow,morphology:this.morphology,turbulence:this.turbulence};
+   return {kind:"gpu",texture,time:this.time,seed:this.seed,flow:this.flow,morphology:this.morphology,turbulence:this.turbulence,integration:this.integration};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
    this.copyVolume(s.texture,this.front);this.time=s.time;this.seed=s.seed;
-   this.flow=s.flow;this.morphology=s.morphology;this.turbulence=s.turbulence||0;
+   this.flow=s.flow;this.morphology=s.morphology;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
  release(s){if(s?.kind==="gpu"&&s.texture)this.gl.deleteTexture(s.texture);}
@@ -152,6 +158,7 @@ export class GPUPigmentTransport{
    const gl=this.gl;gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.front);
    gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,N,N,N,gl.RGBA,gl.UNSIGNED_BYTE,source.pack());
    this.time=source.time;this.seed=source.seed;this.flow=source.flow;this.morphology=source.morphology;
+   this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
 }

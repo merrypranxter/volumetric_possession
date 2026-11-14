@@ -8,7 +8,7 @@ export class PigmentField {
 
   constructor(seed=1226){
     this.a=new Float32Array(N*N*N*4);this.b=new Float32Array(this.a.length);
-    this.bytes=new Uint8Array(this.a.length);this.impulses=[];this.turbulence=0;
+    this.bytes=new Uint8Array(this.a.length);this.impulses=[];this.turbulence=0;this.integration="euler";
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
   reset(seed,morphology=this.morphology){
@@ -63,10 +63,10 @@ export class PigmentField {
     }
     this.dirty=true;
   }
-  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,time:this.time,values:this.a.slice()};}
+  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
-    this.time=s.time;this.turbulence=s.turbulence||0;this.a.set(s.values);this.impulses.length=0;this.dirty=true;
+    this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.a.set(s.values);this.impulses.length=0;this.dirty=true;
   }
   stamp(p,r,channel,amount=.38){
     const lo=p.map(v=>clamp(Math.floor((v-r+1)*N*.5),0,N-1));
@@ -81,8 +81,8 @@ export class PigmentField {
   push(p,v,r){this.impulses.push({p:p.slice(),v:v.slice(),r,ttl:.9});if(this.impulses.length>16)this.impulses.shift();}
 
 
-  velocity(x,y,z,speed,out){
-    const t=this.time,k=this.seed*.000017;
+  velocity(x,y,z,speed,out,t=this.time){
+    const k=this.seed*.000017;
     let vx=0,vy=0,vz=0;
     if(this.flow==="cathedral"){
       // Three Gaussian-windowed rotational vortices; each is divergence-free.
@@ -128,7 +128,12 @@ export class PigmentField {
     const a=this.a,b=this.b,v=[0,0,0];
     for(let z=0;z<N;z++)for(let y=0;y<N;y++)for(let x=0;x<N;x++){
       const px=2*(x+.5)/N-1,py=2*(y+.5)/N-1,pz=2*(z+.5)/N-1;
-      this.velocity(px,py,pz,speed,v);
+      // Backtrace from end-of-step, optionally using curved RK2 trajectories.
+      this.velocity(px,py,pz,speed,v,this.time+dt);
+      if(this.integration==="midpoint"){
+        const mx=px-.5*dt*v[0],my=py-.5*dt*v[1],mz=pz-.5*dt*v[2];
+        this.velocity(mx,my,mz,speed,v,this.time+.5*dt);
+      }
       const sx=clamp((px-v[0]*dt+1)*N*.5-.5,0,N-1);
       const sy=clamp((py-v[1]*dt+1)*N*.5-.5,0,N-1);
       const sz=clamp((pz-v[2]*dt+1)*N*.5-.5,0,N-1);

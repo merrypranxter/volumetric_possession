@@ -37,7 +37,7 @@ select{width:100%;max-width:100%;background:#241b32}
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01C</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01D</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Interactive three-dimensional pigment volume"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 <div id="status" role="status">Preparing the volume…</div>
@@ -66,8 +66,9 @@ select{width:100%;max-width:100%;background:#241b32}
 </section>
 <section class="panel" id="material">
 <div class="grid"><label>Genesis shape (next design)<select id="genesis"><option value="cathedral">Vortex Cathedral</option><option value="gyroid">Gyroid Ghost</option><option value="trefoil">Trefoil Apparition</option><option value="braid">Braided Exorcism</option></select></label><label>Injected pigment<select id="pigment"><option value="0">Pigment 1</option><option value="1">Pigment 2</option><option value="2">Pigment 3</option></select></label>
+<label>Flow tracing<select id="integration"><option value="euler">Fast / Single step</option><option value="midpoint">Curved / Midpoint</option></select></label>
 <label>Quality<select id="quality"><option value="low">Mobile / 36 ray steps</option><option value="mid" selected>Balanced / 50 ray steps</option><option value="high">Detailed / 72 ray steps</option></select></label></div>
-<p class="help"><strong>Genesis does not change the current design.</strong> Choose a starting structure, then press New Design and confirm. Restart seed restores the current structure. Volume: 28 × 28 × 28 evolving cells. Semi-Lagrangian backtracing preserves material history but introduces numerical diffusion. This is an artistic transport model, not a full pressure-projected Navier–Stokes solver.</p>
+<p class="help"><strong>Genesis does not change the current design.</strong> Choose a starting structure, then press New Design and confirm. Restart seed restores the current structure. Volume: 28 × 28 × 28 evolving cells. Semi-Lagrangian backtracing keeps evolving pigment history. Curved tracing follows bent flow trajectories more faithfully (with extra computation), but does not eliminate numerical diffusion. This is an artistic transport model, not a full pressure-projected Navier–Stokes solver.</p>
 </section>
 <section class="panel" id="light">
 <div class="grid"><label>Palette<select id="palette"></select></label>
@@ -76,7 +77,7 @@ select{width:100%;max-width:100%;background:#241b32}
 <label>Emission <output id="glowText">1.2</output><input id="glow" type="range" min=".1" max="3" step=".1" value="1.2"></label>
 <label>Self-shadow <output id="shadowText">1.0</output><input id="shadow" type="range" min="0" max="4" step=".1" value="1"></label>
 <label>Light direction<select id="lightDirection"><option value="side">Side glow</option><option value="top">Overhead</option><option value="back">Backlight</option></select></label></div>
-<p class="help">A directional density probe creates approximate internal self-shadowing (not full multiple scattering). Starter palettes are bundled here. The full MATHEMAGICAL palette vault will be wired in after its canonical source is imported—no invented claim that all your palettes are already present.</p>
+<p class="help">A short light ray now samples density within the volume (1/2/4 light taps depending on Quality) for more layered internal shadowing. Not a multiple-scattering solver. Starter palettes are bundled here. The full MATHEMAGICAL palette vault will be wired in after its canonical source is imported—no invented claim that all your palettes are already present.</p>
 </section>
 <p class="note">No hosting deployment or paid service required. WebGL2 is required for the volume view. PNG exports the current camera view; animated GIF/MP4 are later milestones.</p>
 </main>

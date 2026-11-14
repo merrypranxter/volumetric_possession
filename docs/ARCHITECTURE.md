@@ -40,3 +40,19 @@ GPU mode allocates **two distinct 3D RGBA8 dye textures**. An advection shader s
 GPU history is captured by layerwise `copyTexSubImage3D` into separate 3D checkpoint textures. Undo restores dye and simulation time/flow/morphology; it does not guarantee exact deterministic replay of real-time interaction timing. Checkpoint textures are released when history is cleared or truncated. The GPU fast path automatically falls back to existing CPU advection **only when framebuffer/shader initialization fails**; lack of WebGL2 itself still prevents rendering.
 
 **Important limitations:** 8-bit textures quantize dye concentrations, pressure projection and vorticity feedback are not implemented, self-shadowing is a single directional density probe (not multiple scattering), and WebGL2 shader execution plus Safari GPU performance are not yet verified on a real browser with WebGL2. A mock WebGL contract test validates slice draws and GPU-only copy calls but not pixel correctness. Avoid claims of physically correct incompressible simulations or device benchmarks.
+
+## Phase 01D — trajectory fidelity and depth-sensitive light
+A per-substance **Flow tracing** selector controls how the characteristic departure point is found for dye advection, independently from the selected vortex field:
+- Fast: one velocity evaluation at end-of-step time, then backtrace with first-order Euler.
+- Curved: one end-of-step velocity estimate, then a second velocity evaluation at a half-step backtraced position and halfway time; this is second-order midpoint integration of particle trajectories, **not** second-order reconstruction of the pigment field. Sampling is still trilinear semi-Lagrangian and remains diffusive and non-conservative.
+- The CPU fallback and GPU WebGL2 slice shader share this time convention. Both keep the previous volume unchanged while selecting the tracing mode.
+- Mode is stored with snapshot/restore and preserved on Restart/New Design. UI mode switches are undoable.
+
+The ray-marched optical shader now accumulates density in the illumination direction for 1/2/4 short sampling steps according to render quality. Light absorption uses exponential attenuation from these probes, rather than the old one-offset approximation. It is approximate art-directed self-shadowing, not multiple-scattering, not a path-traced volume, and **not a claim of browser visual verification**.
+
+### Acceptance criteria and limitations
+1. JS parse for CPU engine, GPU shader-source host and renderer; no missing UI controls.
+2. Euler and midpoint results differ numerically for vortex, Beltrami and countercurrent fields, remain finite and deterministic; checkpoint includes the chosen integration mode.
+3. Shader contract checks for `uIntegrator`, `uLightSteps`, fixed loop bounds and quality mapping.
+4. Browser reality still requires a WebGL2 context and physical iPhone Safari test; the available headless Chromium reported `webgl2: false` even with software rendering flags, and local file navigation was blocked.
+5. No promise of faster performance from midpoint mode; it doubles velocity evaluation cost. If the iPhone struggles, use Fast and Mobile.
