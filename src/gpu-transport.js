@@ -10,7 +10,8 @@ precision highp sampler3D;
 uniform sampler3D uPrev;
 uniform float uLayer,uDim,uTime,uDt,uSpeed,uSeedPhase,uTurb;
 uniform float uFoldWrite,uFoldPersistence,uFoldGrip;
-uniform int uFlow,uImpulseCount,uStampCount,uIntegrator;
+uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode;
+uniform float uForgePower,uForgeWidth,uForgePace;
 uniform vec4 uImpulsePos[8],uImpulseVel[8],uStampPos[16],uStampColor[16];
 out vec4 fragColor;
 vec3 velocity(vec3 p,float t){
@@ -48,6 +49,42 @@ vec3 velocity(vec3 p,float t){
  }
  return v;
 }
+
+vec3 forgeSample(vec3 p,float phase,float width){
+ if(uForgeMode==0)return vec3(0.0);
+ float w2=max(.0025,width*width);
+ vec3 result=vec3(0.0);
+ if(uForgeMode==1){
+   float base=5.3*p.z+phase;
+   float envelope=exp(-.25*p.z*p.z);
+   for(int c=0;c<3;c++){
+     float theta=base+float(c)*2.0943951023931953;
+     vec2 d=p.xy-.42*vec2(cos(theta),sin(theta));
+     result[c]=exp(-dot(d,d)/w2)*envelope;
+   }
+ }else if(uForgeMode==2){
+   float radius=length(p.xz),theta=atan(p.z,p.x);
+   float envelope=exp(-.17*radius*radius);
+   for(int c=0;c<3;c++){
+     float shift=float(c)*2.0943951023931953;
+     float ring=.44+.16*cos(5.0*theta+phase+shift);
+     float height=.30*sin(3.0*theta-1.2*phase+shift);
+     vec2 d=vec2(radius-ring,p.y-height);
+     result[c]=exp(-dot(d,d)/w2)*envelope;
+   }
+ }else if(uForgeMode==3){
+   float xx=5.0*p.x+.35*sin(phase);
+   float yy=5.0*p.y+.25*cos(phase);
+   float zz=5.0*p.z-.28*cos(phase);
+   float gyroid=sin(xx)*cos(yy)+sin(yy)*cos(zz)+sin(zz)*cos(xx);
+   float scale=max(.08,width*5.0),envelope=exp(-.32*dot(p,p));
+   for(int c=0;c<3;c++){
+     float delta=(gyroid-(float(c)-1.0)*.88)/scale;
+     result[c]=.13*exp(-delta*delta)*envelope;
+   }
+ }
+ return result;
+}
 void main(){
  vec3 pos=vec3(2.0*gl_FragCoord.xy/uDim-1.0,2.0*(uLayer+.5)/uDim-1.0);
  ivec3 cell=ivec3(ivec2(gl_FragCoord.xy),int(uLayer));
@@ -69,6 +106,13 @@ void main(){
    if(d>=1.0)continue;
    dye+=uStampColor[i].rgb*(1.0-d)*(1.0-d);
  }
+ // Source material is added to RGB density, not rendered as a disconnected overlay.
+ // dt=0 is used for touch-stamp flushes and must not grow fresh filaments.
+ if(uForgeMode>0&&uForgePower>0.0&&uDt>0.0){
+   float phase=(uTime+uDt)*uForgePace*.55+uSeedPhase;
+   vec3 feed=forgeSample(pos,phase,uForgeWidth);
+   dye+=uDt*uForgePower*feed*(vec3(1.0)-clamp(dye,0.0,1.0));
+ }
  // Cross-flow dye boundaries write to a fourth advected 3D material channel.
  // This is artistic interface/fold memory, not a physical strain tensor.
  ivec3 axis=(abs(v.x)>abs(v.y))?ivec3(0,1,0):ivec3(1,0,0);
@@ -82,6 +126,7 @@ void main(){
  fragColor=vec4(clamp(dye,0.0,1.0),fold);
 }`;
 const FLOW={cathedral:0,beltrami:1,countercurrent:2};
+const FORGE={off:0,helix:1,rosette:2,gyroid:3};
 function shader(gl,type,source){
  const s=gl.createShader(type);gl.shaderSource(s,source);gl.compileShader(s);
  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error("GPU transport GLSL: "+gl.getShaderInfoLog(s));
@@ -109,12 +154,14 @@ export class GPUPigmentTransport{
    gl.deleteShader(v);gl.deleteShader(f);
    if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error("GPU transport link: "+gl.getProgramInfoLog(p));
    this.program=p;this.vao=gl.createVertexArray();this.loc={};
-   const names=["uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
+   const names=["uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uForgeMode","uForgePower","uForgeWidth","uForgePace","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
    for(const n of names)this.loc[n]=gl.getUniformLocation(p,n);
    for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
    this.time=source.time;this.seed=source.seed;this.morphology=source.morphology;this.flow=source.flow;
    this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
    this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
+   this.forgeMode=source.forgeMode??"rosette";this.forgePower=source.forgePower??.75;
+   this.forgeWidth=source.forgeWidth??.17;this.forgePace=source.forgePace??.65;
    this.impulses=[];this.pending=[];
    renderer.externalSource=true;renderer.texture=this.front;
  }
@@ -133,6 +180,9 @@ export class GPUPigmentTransport{
    gl.uniform1f(U.uTurb,this.turbulence);gl.uniform1i(U.uFlow,FLOW[this.flow]??0);
    gl.uniform1i(U.uIntegrator,this.integration==="midpoint"?1:0);
    gl.uniform1f(U.uFoldWrite,this.foldWrite);gl.uniform1f(U.uFoldPersistence,this.foldPersistence);gl.uniform1f(U.uFoldGrip,this.foldGrip);
+   gl.uniform1i(U.uForgeMode,FORGE[this.forgeMode]??0);
+   gl.uniform1f(U.uForgePower,this.forgePower);gl.uniform1f(U.uForgeWidth,this.forgeWidth);
+   gl.uniform1f(U.uForgePace,this.forgePace);
    const pp=new Float32Array(32),pv=new Float32Array(32);
    for(let i=0;i<this.impulses.length;i++){const s=this.impulses[i];pp.set([...s.p,s.r],i*4);pv.set([...s.v,s.ttl],i*4);}
    gl.uniform1i(U.uImpulseCount,this.impulses.length);gl.uniform4fv(U.uImpulsePos,pp);gl.uniform4fv(U.uImpulseVel,pv);
@@ -164,13 +214,15 @@ export class GPUPigmentTransport{
  }
  snapshot(){
    const texture=volume(this.gl);this.copyVolume(this.front,texture);
-   return {kind:"gpu",texture,time:this.time,seed:this.seed,flow:this.flow,morphology:this.morphology,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip};
+   return {kind:"gpu",texture,time:this.time,seed:this.seed,flow:this.flow,morphology:this.morphology,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
    this.copyVolume(s.texture,this.front);this.time=s.time;this.seed=s.seed;
    this.flow=s.flow;this.morphology=s.morphology;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
    this.foldPersistence=s.foldPersistence??.80;this.foldGrip=s.foldGrip??.35;
+   this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
+   this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
  release(s){if(s?.kind==="gpu"&&s.texture)this.gl.deleteTexture(s.texture);}
@@ -180,6 +232,8 @@ export class GPUPigmentTransport{
    this.time=source.time;this.seed=source.seed;this.flow=source.flow;this.morphology=source.morphology;
    this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
    this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
+   this.forgeMode=source.forgeMode??"rosette";this.forgePower=source.forgePower??.75;
+   this.forgeWidth=source.forgeWidth??.17;this.forgePace=source.forgePace??.65;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
 }

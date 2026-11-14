@@ -93,7 +93,7 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / IMMERSIVE 01F</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / FILAMENT FORGE 01G</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -133,10 +133,20 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 <div class="grid"><label>Genesis shape (next design)<select id="genesis"><option value="cathedral">Vortex Cathedral</option><option value="gyroid">Gyroid Ghost</option><option value="trefoil">Trefoil Apparition</option><option value="braid">Braided Exorcism</option></select></label><label>Injected pigment<select id="pigment"><option value="0">Pigment 1</option><option value="1">Pigment 2</option><option value="2">Pigment 3</option></select></label>
 <label>Flow tracing<select id="integration"><option value="euler">Fast / Single step</option><option value="midpoint">Curved / Midpoint</option></select></label>
 <label>Quality<select id="quality"><option value="low">Mobile / 36 ray steps</option><option value="mid" selected>Balanced / 50 ray steps</option><option value="high">Detailed / 72 ray steps</option></select></label>
+<label>Filament Forge — 3D source<select id="forgeMode">
+<option value="off">Off — let existing material drift</option>
+<option value="rosette" selected>Orbital Rosettes</option>
+<option value="helix">Triple Helix Nerves</option>
+<option value="gyroid">Gyroid Sutures</option>
+</select></label>
+<label>Forge growth <output id="forgePowerText">0.75</output><input id="forgePower" type="range" min="0" max="2" step=".05" value=".75"></label>
+<label>Thread thickness <output id="forgeWidthText">0.17</output><input id="forgeWidth" type="range" min=".08" max=".40" step=".01" value=".17"></label>
+<label>Source motion <output id="forgePaceText">0.65</output><input id="forgePace" type="range" min="0" max="2" step=".05" value=".65"></label>
 <label>Fold formation <output id="foldWriteText">1.4</output><input id="foldWrite" type="range" min="0" max="4" step=".1" value="1.4"></label>
 <label>Fold persistence <output id="foldPersistenceText">0.80</output><input id="foldPersistence" type="range" min="0" max="1" step=".05" value=".8"></label>
 <label>Fold grip <output id="foldGripText">0.35</output><input id="foldGrip" type="range" min="0" max="1" step=".05" value=".35"></label>
 <label>Inspect substance<select id="memoryView"><option value="0">Colored pigment</option><option value="1">Fold-memory map</option></select></label></div>
+<p class="help"><strong>FILAMENT FORGE:</strong> Choose an evolving source architecture. Three colored 3D manifolds inject pigment into the live flow; source motion shifts the source itself while vortex advection bends its trails. Switching source or turning it off never erases existing dye. Growth is capped and thickness is measured in volume-world units, not screen pixels.</p>
 <p class="help"><strong>Material memory:</strong> Dye interfaces write an advected fourth field that persists as folds age. Fold grip makes old folds move slightly differently; memory-map view reveals the stored history. This is an art-directed interface-memory model, not an elastic-fluid strain tensor.</p>
 <p class="help"><strong>Genesis does not change the current design.</strong> Choose a starting structure, then press New Design and confirm. Restart seed restores the current structure. Volume: 28 × 28 × 28 evolving cells. Semi-Lagrangian backtracing keeps evolving pigment history. Curved tracing follows bent flow trajectories more faithfully (with extra computation), but does not eliminate numerical diffusion. This is an artistic transport model, not a full pressure-projected Navier–Stokes solver.</p>
 </section>
