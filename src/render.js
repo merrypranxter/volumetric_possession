@@ -11,10 +11,10 @@ precision highp sampler3D;
 out vec4 outColor;
 uniform sampler3D uVolume;
 uniform vec3 uEye,uForward,uRight,uUp,uA,uB,uC,uBg;
-uniform float uAspect,uGain,uGlow,uShadow;
+uniform float uAspect,uGain,uGlow,uShadow,uFoldGlow;
 uniform vec3 uLightDir;
 uniform vec2 uCanvasSize;
-uniform int uSteps,uLightSteps;
+uniform int uSteps,uLightSteps,uMemoryView;
 void main(){
   vec2 uv=(gl_FragCoord.xy/uCanvasSize)*2.0-1.0;
   vec3 direction=normalize(uForward*1.55+uRight*uv.x*uAspect+uUp*uv.y);
@@ -30,8 +30,10 @@ void main(){
       if(i>=uSteps)break;
       vec3 pos=uEye+direction*(start+(float(i)+.5)*stride);
       vec3 sampleUV=clamp(pos*.5+.5,vec3(0.0),vec3(1.0));
-      vec3 dye=texture(uVolume,sampleUV).rgb;
-      float mass=dye.r+dye.g+dye.b;
+      vec4 sampleData=texture(uVolume,sampleUV);
+      vec3 dye=sampleData.rgb;
+      float fold=clamp(sampleData.a*uFoldGlow,0.0,2.0);
+      float mass=uMemoryView==1?sampleData.a*1.8:(dye.r+dye.g+dye.b);
       if(mass>.008){
         // Integrate optical depth toward the light: 1/2/4 taps by quality.
         // This is an art-directed single-scattering approximation, not a full solver.
@@ -48,9 +50,14 @@ void main(){
         float nearDepth=opticalDepth/max(sampleCount,1.0);
         float shade=clamp(.90+1.65*(mass*.333333-nearDepth),.35,1.4)
                   *exp(-uShadow*opticalDepth*.68);
-        vec3 pigment=(dye.r*uA+dye.g*uB+dye.b*uC)/max(mass,.0001);
-        float alpha=1.0-exp(-mass*uGain*stride);
-        accum+=trans*alpha*pigment*shade*(.76+uGlow*.42);
+        vec3 pigment=uMemoryView==1
+          ? vec3(.83,.24,1.0)
+          : (dye.r*uA+dye.g*uB+dye.b*uC)/max(mass,.0001);
+        // Memory marks material interfaces with a luminous, less opaque core.
+        // The dye's RGB remains the source of its color; memory changes optics.
+        vec3 filamentTint=mix(pigment,vec3(1.0),min(.32,fold*.18));
+        float alpha=1.0-exp(-mass*uGain*stride*(1.0+.38*fold));
+        accum+=trans*alpha*filamentTint*shade*(.76+uGlow*.42)*(1.0+.55*fold);
         trans*=1.0-alpha;
         if(trans<.015)break;
       }
@@ -97,7 +104,7 @@ export class VolumeRenderer{
     if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error("GL link: "+gl.getProgramInfoLog(prog));
     gl.deleteShader(vs);gl.deleteShader(fs);this.prog=prog;
     this.locations={};
-    for(const name of ["uVolume","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uAspect","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow","uLightSteps"])this.locations[name]=gl.getUniformLocation(prog,name);
+    for(const name of ["uVolume","uEye","uForward","uRight","uUp","uA","uB","uC","uBg","uAspect","uGain","uGlow","uSteps","uCanvasSize","uLightDir","uShadow","uLightSteps","uFoldGlow","uMemoryView"])this.locations[name]=gl.getUniformLocation(prog,name);
     this.texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_3D,this.texture);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
@@ -127,6 +134,6 @@ export class VolumeRenderer{
     gl.uniform1f(U.uAspect,w/h);gl.uniform1f(U.uGain,opts.gain);gl.uniform1f(U.uGlow,opts.glow);
     gl.uniform1i(U.uSteps,opts.steps);gl.uniform2f(U.uCanvasSize,w,h);
     gl.uniform3fv(U.uLightDir,opts.lightDir);gl.uniform1f(U.uShadow,opts.shadow);
-    gl.uniform1i(U.uLightSteps,opts.lightSteps||1);gl.drawArrays(gl.TRIANGLES,0,3);
+    gl.uniform1i(U.uLightSteps,opts.lightSteps||1);gl.uniform1f(U.uFoldGlow,opts.foldGlow??1);gl.uniform1i(U.uMemoryView,opts.memoryView||0);gl.drawArrays(gl.TRIANGLES,0,3);
   }
 }

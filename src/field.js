@@ -9,6 +9,7 @@ export class PigmentField {
   constructor(seed=1226){
     this.a=new Float32Array(N*N*N*4);this.b=new Float32Array(this.a.length);
     this.bytes=new Uint8Array(this.a.length);this.impulses=[];this.turbulence=0;this.integration="euler";
+    this.foldWrite=1.4;this.foldPersistence=.80;this.foldGrip=.35;
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
   reset(seed,morphology=this.morphology){
@@ -59,14 +60,15 @@ export class PigmentField {
       const i=index(x,y,z),variation=.91+.09*rng();
       this.a[i]=clamp(c[0]*variation,0,1);
       this.a[i+1]=clamp(c[1]*variation,0,1);
-      this.a[i+2]=clamp(c[2]*variation,0,1);this.a[i+3]=1;
+      this.a[i+2]=clamp(c[2]*variation,0,1);this.a[i+3]=0; // A = advected fold-memory, not opacity.
     }
     this.dirty=true;
   }
-  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,time:this.time,values:this.a.slice()};}
+  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
-    this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.a.set(s.values);this.impulses.length=0;this.dirty=true;
+    this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
+    this.foldPersistence=s.foldPersistence??.80;this.foldGrip=s.foldGrip??.35;this.a.set(s.values);this.impulses.length=0;this.dirty=true;
   }
   stamp(p,r,channel,amount=.38){
     const lo=p.map(v=>clamp(Math.floor((v-r+1)*N*.5),0,N-1));
@@ -134,6 +136,10 @@ export class PigmentField {
         const mx=px-.5*dt*v[0],my=py-.5*dt*v[1],mz=pz-.5*dt*v[2];
         this.velocity(mx,my,mz,speed,v,this.time+.5*dt);
       }
+      const i=index(x,y,z);
+      // Older folds become fractionally resistant to advection (art-directed, not incompressible).
+      const grip=1-.35*this.foldGrip*a[i+3];
+      v[0]*=grip;v[1]*=grip;v[2]*=grip;
       const sx=clamp((px-v[0]*dt+1)*N*.5-.5,0,N-1);
       const sy=clamp((py-v[1]*dt+1)*N*.5-.5,0,N-1);
       const sz=clamp((pz-v[2]*dt+1)*N*.5-.5,0,N-1);
@@ -142,13 +148,22 @@ export class PigmentField {
       const fx=sx-x0,fy=sy-y0,fz=sz-z0;
       const j000=index(x0,y0,z0),j100=index(x1,y0,z0),j010=index(x0,y1,z0),j110=index(x1,y1,z0);
       const j001=index(x0,y0,z1),j101=index(x1,y0,z1),j011=index(x0,y1,z1),j111=index(x1,y1,z1);
-      const i=index(x,y,z),fade=Math.exp(-.019*dt);
-      for(let c=0;c<3;c++){
+      const fade=Math.exp(-.019*dt);
+      for(let c=0;c<4;c++){
         const c00=a[j000+c]*(1-fx)+a[j100+c]*fx,c10=a[j010+c]*(1-fx)+a[j110+c]*fx;
         const c01=a[j001+c]*(1-fx)+a[j101+c]*fx,c11=a[j011+c]*(1-fx)+a[j111+c]*fx;
-        b[i+c]=((c00*(1-fy)+c10*fy)*(1-fz)+(c01*(1-fy)+c11*fy)*fz)*fade;
+        b[i+c]=((c00*(1-fy)+c10*fy)*(1-fz)+(c01*(1-fy)+c11*fy)*fz)*(c===3?1:fade);
       }
-      b[i+3]=1;
+      // Measure cross-flow pigment interface contrast in the previous material.
+      // This is a bounded fold-writing proxy, NOT a finite-strain tensor.
+      const chooseY=Math.abs(v[0])>Math.abs(v[1]);
+      const plus=chooseY?index(x,Math.min(N-1,y+1),z):index(Math.min(N-1,x+1),y,z);
+      const minus=chooseY?index(x,Math.max(0,y-1),z):index(Math.max(0,x-1),y,z);
+      const dc0=a[plus]-a[minus],dc1=a[plus+1]-a[minus+1],dc2=a[plus+2]-a[minus+2];
+      const contrast=Math.min(1,Math.hypot(dc0,dc1,dc2)*.57735026919);
+      const mass=b[i]+b[i+1]+b[i+2];
+      const decay=Math.exp(-dt*(.06+1.15*(1-this.foldPersistence)));
+      b[i+3]=clamp(b[i+3]*decay+dt*this.foldWrite*contrast*Math.min(1,mass),0,1);
     }
     this.a=b;this.b=a;this.time+=dt;this.dirty=true;
     this.impulses=this.impulses.filter(s=>(s.ttl-=dt)>0);
@@ -156,7 +171,7 @@ export class PigmentField {
   pack(){
     if(!this.dirty)return this.bytes;
     const a=this.a,out=this.bytes;
-    for(let i=0;i<a.length;i+=4){out[i]=clamp(Math.round(a[i]*255),0,255);out[i+1]=clamp(Math.round(a[i+1]*255),0,255);out[i+2]=clamp(Math.round(a[i+2]*255),0,255);out[i+3]=255;}
+    for(let i=0;i<a.length;i+=4){out[i]=clamp(Math.round(a[i]*255),0,255);out[i+1]=clamp(Math.round(a[i+1]*255),0,255);out[i+2]=clamp(Math.round(a[i+2]*255),0,255);out[i+3]=clamp(Math.round(a[i+3]*255),0,255);}
     this.dirty=false;return out;
   }
 }

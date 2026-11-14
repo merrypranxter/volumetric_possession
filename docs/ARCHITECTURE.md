@@ -56,3 +56,28 @@ The ray-marched optical shader now accumulates density in the illumination direc
 3. Shader contract checks for `uIntegrator`, `uLightSteps`, fixed loop bounds and quality mapping.
 4. Browser reality still requires a WebGL2 context and physical iPhone Safari test; the available headless Chromium reported `webgl2: false` even with software rendering flags, and local file navigation was blocked.
 5. No promise of faster performance from midpoint mode; it doubles velocity evaluation cost. If the iPhone struggles, use Fast and Mobile.
+
+## Phase 01E — Material Memory / Fold Ghosts (2026-11-13)
+**Material state now has four channels per 3D voxel:**
+- R/G/B = independent transported pigment concentrations.
+- A = a persistent `foldMemory` scalar in [0,1], *not* opacity. Previously the channel was an unused constant 1; now it starts at 0 and evolves.
+
+At each fixed simulation step:
+1. Sample the prior volume at the velocity-backtraced coordinate, including the prior memory value `m_advected` (trilinear CPU/GPU).
+2. Compare two prior RGB samples at adjacent voxels along a grid axis chosen approximately across the local flow in XY. The bounded RGB contrast is an **interface activity proxy**, not a physical strain tensor:
+   `contrast = min(1, length(dye_plus - dye_minus) / sqrt(3))`.
+3. Write a bounded amount of this observed contrast into memory, weighted by the advected pigment mass, and relax previously written memory:
+   `m_next = clamp(m_advected * exp(-dt * (.06 + 1.15 * (1 - persistence))) + dt * foldWrite * contrast * min(1, sum(rgb_next)), 0, 1)`.
+4. Let old memory locally slow the backtraced transport velocity by the bounded factor `1 - .35 * foldGrip * m_here`, where `m_here` is the prior cell's memory. This introduces genuine *feedback into subsequent RGB evolution*, but it is an **art-directed, generally compressible** intervention; not Navier–Stokes, not elastic strain, not mass preserving. With Fold Grip zero it only affects appearance.
+5. In the volume ray marcher, RGBA sampling exposes the memory as optional filament brightness/opacity enhancement. **Inspect substance → Fold-memory map** renders memory without using RGB as its primary density.
+
+The extra memory channel uses the same existing RGBA8 GPU ping-pong volumes and GPU checkpoint layers. There is **no new 3D texture** beyond the existing front/back and undo snapshot textures. CPU fallback packs A to bytes, while GPU shader writes it alongside RGB. The CPU uses float intermediate memory, GPU quantizes to 8 bits; parity is approximate (especially for faint folds).
+
+### Controls and undo
+Substance: Fold formation, Fold persistence, Fold grip, and Fold-memory map diagnostic. Light + color: Filament shine (purely optical). Changing fold structural sliders creates undoable GPU/CPU checkpoints at the end of the edit. Undo/redo snapshots retain the new fold parameters; reseeding explicitly preserves current parameters but clears the material's accumulated history.
+
+### Next real physical evolution
+An actual local 3D deformation-gradient or advected fiber-orientation tensor is **not yet implemented**. Such a model can later track individual filaments stretching and aligning in flow. The present field captures and preserves pigmented interfaces and their history; calling it physical vortex stretching would be incorrect.
+
+### QA status
+Simulation arithmetic, finite values, zero-write baseline, positive accumulated memory, pigment response to Fold Grip, deterministic repeats, bytes and checkpoint restore are testable without WebGL. GPU shader uniform and GLSL source contract tests protect integration but **do not verify live shader compilation, rendered pixels or Safari performance**. No merge or production deploy requested.

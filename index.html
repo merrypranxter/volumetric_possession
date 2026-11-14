@@ -37,7 +37,7 @@ select{width:100%;max-width:100%;background:#241b32}
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01D</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01E</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Interactive three-dimensional pigment volume"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 <div id="status" role="status">Preparing the volume…</div>
@@ -67,7 +67,12 @@ select{width:100%;max-width:100%;background:#241b32}
 <section class="panel" id="material">
 <div class="grid"><label>Genesis shape (next design)<select id="genesis"><option value="cathedral">Vortex Cathedral</option><option value="gyroid">Gyroid Ghost</option><option value="trefoil">Trefoil Apparition</option><option value="braid">Braided Exorcism</option></select></label><label>Injected pigment<select id="pigment"><option value="0">Pigment 1</option><option value="1">Pigment 2</option><option value="2">Pigment 3</option></select></label>
 <label>Flow tracing<select id="integration"><option value="euler">Fast / Single step</option><option value="midpoint">Curved / Midpoint</option></select></label>
-<label>Quality<select id="quality"><option value="low">Mobile / 36 ray steps</option><option value="mid" selected>Balanced / 50 ray steps</option><option value="high">Detailed / 72 ray steps</option></select></label></div>
+<label>Quality<select id="quality"><option value="low">Mobile / 36 ray steps</option><option value="mid" selected>Balanced / 50 ray steps</option><option value="high">Detailed / 72 ray steps</option></select></label>
+<label>Fold formation <output id="foldWriteText">1.4</output><input id="foldWrite" type="range" min="0" max="4" step=".1" value="1.4"></label>
+<label>Fold persistence <output id="foldPersistenceText">0.80</output><input id="foldPersistence" type="range" min="0" max="1" step=".05" value=".8"></label>
+<label>Fold grip <output id="foldGripText">0.35</output><input id="foldGrip" type="range" min="0" max="1" step=".05" value=".35"></label>
+<label>Inspect substance<select id="memoryView"><option value="0">Colored pigment</option><option value="1">Fold-memory map</option></select></label></div>
+<p class="help"><strong>Material memory:</strong> Dye interfaces write an advected fourth field that persists as folds age. Fold grip makes old folds move slightly differently; memory-map view reveals the stored history. This is an art-directed interface-memory model, not an elastic-fluid strain tensor.</p>
 <p class="help"><strong>Genesis does not change the current design.</strong> Choose a starting structure, then press New Design and confirm. Restart seed restores the current structure. Volume: 28 × 28 × 28 evolving cells. Semi-Lagrangian backtracing keeps evolving pigment history. Curved tracing follows bent flow trajectories more faithfully (with extra computation), but does not eliminate numerical diffusion. This is an artistic transport model, not a full pressure-projected Navier–Stokes solver.</p>
 </section>
 <section class="panel" id="light">
@@ -75,6 +80,7 @@ select{width:100%;max-width:100%;background:#241b32}
 <label>Background<select id="background"><option value="0">Void black</option><option value="1">Midnight blue</option><option value="2">Deep plum</option></select></label>
 <label>Optical density <output id="densityText">4.5</output><input id="density" type="range" min=".5" max="10" step=".5" value="4.5"></label>
 <label>Emission <output id="glowText">1.2</output><input id="glow" type="range" min=".1" max="3" step=".1" value="1.2"></label>
+<label>Filament shine <output id="foldGlowText">1.3</output><input id="foldGlow" type="range" min="0" max="3" step=".1" value="1.3"></label>
 <label>Self-shadow <output id="shadowText">1.0</output><input id="shadow" type="range" min="0" max="4" step=".1" value="1"></label>
 <label>Light direction<select id="lightDirection"><option value="side">Side glow</option><option value="top">Overhead</option><option value="back">Backlight</option></select></label></div>
 <p class="help">A short light ray now samples density within the volume (1/2/4 light taps depending on Quality) for more layered internal shadowing. Not a multiple-scattering solver. Starter palettes are bundled here. The full MATHEMAGICAL palette vault will be wired in after its canonical source is imported—no invented claim that all your palettes are already present.</p>

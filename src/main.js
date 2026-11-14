@@ -18,21 +18,30 @@ const canvas=$("art"),field=new PigmentField(1226);
 let engine=field,engineMode="CPU";
 let renderer,paused=false,mode="stir",active=null,lastFrame=0,lastDraw=0,accumulator=0;
 const camera={azimuth:.62,elevation:.23,distance:3.25};
-const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,shadow:1,lightDirection:"side",lightSteps:2,steps:50,background:[0.009,.006,.023]};
+const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,shadow:1,lightDirection:"side",lightSteps:2,foldGlow:1.3,memoryView:0,steps:50,background:[0.009,.006,.023]};
 const directions={side:[.75,.45,.4],top:[.2,1,.2],back:[-.6,.23,-.75]};
 const undo=[],redo=[];
+const foldEditDrafts=new Map();
 const status=text=>$("status").textContent=text;
 function releaseCommands(commands){for(const cmd of commands){engine.release?.(cmd.before);engine.release?.(cmd.after);}}
-function clearHistory(){releaseCommands(undo);releaseCommands(redo);undo.length=0;redo.length=0;updateHistory();}
+function clearHistory(){
+  for(const saved of foldEditDrafts.values())engine.release?.(saved);
+  foldEditDrafts.clear();
+  releaseCommands(undo);releaseCommands(redo);undo.length=0;redo.length=0;updateHistory();
+}
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
 function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();}
-function restore(s){engine.restore(s);$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";if(renderer&&engine===field)renderer.upload();}
+function restore(s){engine.restore(s);$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";for(const id of ["foldWrite","foldPersistence","foldGrip"]){
+  $(id).value=engine[id];$(id+"Text").textContent=Number(engine[id]).toFixed(id==="foldWrite"?1:2);
+  field[id]=engine[id];
+}
+if(renderer&&engine===field)renderer.upload();}
 function undoStroke(){if(!undo.length)return;const cmd=undo.pop();redo.push(cmd);restore(cmd.before);updateHistory();}
 function redoStroke(){if(!redo.length)return;const cmd=redo.pop();undo.push(cmd);restore(cmd.after);updateHistory();}
 function params(){const p=palettes[paletteSelect.value]||palettes["Prismatic Riot"];return p.map(rgb);}
 function draw(){
   if(!renderer)return;const bg=[options.background,[.012,.018,.065],[.042,.008,.05]][Number($("background").value)];
-  renderer.draw(camera,params(),{gain:options.gain,glow:options.glow,steps:options.steps,background:bg,lightDir:directions[options.lightDirection],shadow:options.shadow,lightSteps:options.lightSteps});
+  renderer.draw(camera,params(),{gain:options.gain,glow:options.glow,steps:options.steps,background:bg,lightDir:directions[options.lightDirection],shadow:options.shadow,lightSteps:options.lightSteps,foldGlow:options.foldGlow,memoryView:options.memoryView});
 }
 function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera"}[mode];}
 for(const b of document.querySelectorAll(".mode"))b.addEventListener("click",()=>setMode(b.dataset.mode));
@@ -40,8 +49,24 @@ for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>
   for(const t of document.querySelectorAll(".tab"))t.setAttribute("aria-pressed",String(t===b));
   for(const p of document.querySelectorAll(".panel"))p.classList.toggle("open",p.id===b.dataset.panel);
 });
-for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence"]){
-  $(id).addEventListener("input",()=>{const val=Number($(id).value);const key=id==="density"?"gain":id;if(id==="turbulence")engine.turbulence=val;else options[key]=val;$(id+"Text").textContent=val.toFixed(id==="brush"||id==="depth"?2:1);});
+for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence","foldGlow","foldWrite","foldPersistence","foldGrip"]){
+  $(id).addEventListener("input",()=>{
+    if(["foldWrite","foldPersistence","foldGrip"].includes(id)&&!foldEditDrafts.has(id)){
+      foldEditDrafts.set(id,engine.snapshot());
+    }
+    const val=Number($(id).value);const key=id==="density"?"gain":id;if(id==="turbulence")engine.turbulence=val;
+    else if(["foldWrite","foldPersistence","foldGrip"].includes(id)){engine[id]=val;field[id]=val;}
+    else options[key]=val;$(id+"Text").textContent=val.toFixed(id==="brush"||id==="depth"||id==="foldGrip"||id==="foldPersistence"?2:1);});
+  if(["foldWrite","foldPersistence","foldGrip"].includes(id)){
+    const commit=()=>{
+      const original=foldEditDrafts.get(id);
+      if(!original)return;
+      foldEditDrafts.delete(id);
+      snapshotCommand(original);
+    };
+    $(id).addEventListener("change",commit);
+    $(id).addEventListener("blur",commit);
+  }
 }
 $("quality").addEventListener("change",()=>{
   const quality=$("quality").value;
@@ -58,6 +83,7 @@ $("integration").addEventListener("change",()=>{
   status("Flow tracing: "+(next==="midpoint"?"Curved midpoint trajectories":"Fast single-step")+" · pigment preserved");
 });
 $("lightDirection").addEventListener("change",()=>{options.lightDirection=$("lightDirection").value;});
+$("memoryView").addEventListener("change",()=>{options.memoryView=Number($("memoryView").value);});
 $("flow").addEventListener("change",()=>{
   if(engine.flow===$("flow").value)return;
   const before=engine.snapshot();
@@ -69,8 +95,10 @@ $("genesis").addEventListener("change",()=>status("Genesis queued: "+$("genesis"
 $("background").addEventListener("change",draw);paletteSelect.addEventListener("change",draw);
 $("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Play":"Ⅱ Pause";status(paused?"Simulation paused":"Simulation resumed");});
 $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click",redoStroke);
-$("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;if(engine!==field)engine.reset(field);clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
-$("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(seed,$("genesis").value);field.flow=flow;field.turbulence=turbulence;field.integration=integration;if(engine!==field)engine.reset(field);clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
+$("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
+for(const id of ["foldWrite","foldPersistence","foldGrip"])field[id]=engine[id];if(engine!==field)engine.reset(field);clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
+$("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(seed,$("genesis").value);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
+for(const id of ["foldWrite","foldPersistence","foldGrip"])field[id]=engine[id];if(engine!==field)engine.reset(field);clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
 document.addEventListener("keydown",event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redoStroke();else undoStroke();}});
 canvas.addEventListener("pointerdown",event=>{

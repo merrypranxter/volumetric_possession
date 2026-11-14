@@ -9,6 +9,7 @@ precision highp float;
 precision highp sampler3D;
 uniform sampler3D uPrev;
 uniform float uLayer,uDim,uTime,uDt,uSpeed,uSeedPhase,uTurb;
+uniform float uFoldWrite,uFoldPersistence,uFoldGrip;
 uniform int uFlow,uImpulseCount,uStampCount,uIntegrator;
 uniform vec4 uImpulsePos[8],uImpulseVel[8],uStampPos[16],uStampColor[16];
 out vec4 fragColor;
@@ -49,13 +50,18 @@ vec3 velocity(vec3 p,float t){
 }
 void main(){
  vec3 pos=vec3(2.0*gl_FragCoord.xy/uDim-1.0,2.0*(uLayer+.5)/uDim-1.0);
+ ivec3 cell=ivec3(ivec2(gl_FragCoord.xy),int(uLayer));
  vec3 v=velocity(pos,uTime+uDt);
  if(uIntegrator==1){
    vec3 mid=pos-v*(.5*uDt);
    v=velocity(mid,uTime+.5*uDt);
  }
+ // Fold memory from the previous material affects the next transport velocity.
+ float oldLocalMemory=texelFetch(uPrev,cell,0).a;
+ v*=1.0-.35*uFoldGrip*oldLocalMemory;
  vec3 back=clamp(pos-v*uDt,vec3(-1),vec3(1));
- vec3 dye=texture(uPrev,back*.5+.5).rgb*exp(-.019*uDt);
+ vec4 previous=texture(uPrev,back*.5+.5);
+ vec3 dye=previous.rgb*exp(-.019*uDt);
  for(int i=0;i<16;i++){
    if(i>=uStampCount)break;
    vec3 diff=pos-uStampPos[i].xyz;float r=uStampPos[i].w;
@@ -63,7 +69,17 @@ void main(){
    if(d>=1.0)continue;
    dye+=uStampColor[i].rgb*(1.0-d)*(1.0-d);
  }
- fragColor=vec4(clamp(dye,0.0,1.0),1.0);
+ // Cross-flow dye boundaries write to a fourth advected 3D material channel.
+ // This is artistic interface/fold memory, not a physical strain tensor.
+ ivec3 axis=(abs(v.x)>abs(v.y))?ivec3(0,1,0):ivec3(1,0,0);
+ ivec3 sizeMax=ivec3(int(uDim)-1);
+ vec3 above=texelFetch(uPrev,clamp(cell+axis,ivec3(0),sizeMax),0).rgb;
+ vec3 below=texelFetch(uPrev,clamp(cell-axis,ivec3(0),sizeMax),0).rgb;
+ float contrast=min(1.0,length(above-below)*.57735026919);
+ float mass=min(1.0,dye.r+dye.g+dye.b);
+ float decay=exp(-uDt*(.06+1.15*(1.0-uFoldPersistence)));
+ float fold=clamp(previous.a*decay+uDt*uFoldWrite*contrast*mass,0.0,1.0);
+ fragColor=vec4(clamp(dye,0.0,1.0),fold);
 }`;
 const FLOW={cathedral:0,beltrami:1,countercurrent:2};
 function shader(gl,type,source){
@@ -93,11 +109,13 @@ export class GPUPigmentTransport{
    gl.deleteShader(v);gl.deleteShader(f);
    if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error("GPU transport link: "+gl.getProgramInfoLog(p));
    this.program=p;this.vao=gl.createVertexArray();this.loc={};
-   const names=["uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
+   const names=["uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uImpulsePos","uImpulseVel","uStampPos","uStampColor"];
    for(const n of names)this.loc[n]=gl.getUniformLocation(p,n);
    for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
    this.time=source.time;this.seed=source.seed;this.morphology=source.morphology;this.flow=source.flow;
-   this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";this.impulses=[];this.pending=[];
+   this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
+   this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
+   this.impulses=[];this.pending=[];
    renderer.externalSource=true;renderer.texture=this.front;
  }
  stamp(p,r,channel,amount=.38){
@@ -114,6 +132,7 @@ export class GPUPigmentTransport{
    gl.uniform1f(U.uSpeed,speed);gl.uniform1f(U.uDim,N);gl.uniform1f(U.uSeedPhase,this.seed*.000017);
    gl.uniform1f(U.uTurb,this.turbulence);gl.uniform1i(U.uFlow,FLOW[this.flow]??0);
    gl.uniform1i(U.uIntegrator,this.integration==="midpoint"?1:0);
+   gl.uniform1f(U.uFoldWrite,this.foldWrite);gl.uniform1f(U.uFoldPersistence,this.foldPersistence);gl.uniform1f(U.uFoldGrip,this.foldGrip);
    const pp=new Float32Array(32),pv=new Float32Array(32);
    for(let i=0;i<this.impulses.length;i++){const s=this.impulses[i];pp.set([...s.p,s.r],i*4);pv.set([...s.v,s.ttl],i*4);}
    gl.uniform1i(U.uImpulseCount,this.impulses.length);gl.uniform4fv(U.uImpulsePos,pp);gl.uniform4fv(U.uImpulseVel,pv);
@@ -145,12 +164,13 @@ export class GPUPigmentTransport{
  }
  snapshot(){
    const texture=volume(this.gl);this.copyVolume(this.front,texture);
-   return {kind:"gpu",texture,time:this.time,seed:this.seed,flow:this.flow,morphology:this.morphology,turbulence:this.turbulence,integration:this.integration};
+   return {kind:"gpu",texture,time:this.time,seed:this.seed,flow:this.flow,morphology:this.morphology,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
    this.copyVolume(s.texture,this.front);this.time=s.time;this.seed=s.seed;
-   this.flow=s.flow;this.morphology=s.morphology;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";
+   this.flow=s.flow;this.morphology=s.morphology;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
+   this.foldPersistence=s.foldPersistence??.80;this.foldGrip=s.foldGrip??.35;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
  release(s){if(s?.kind==="gpu"&&s.texture)this.gl.deleteTexture(s.texture);}
@@ -159,6 +179,7 @@ export class GPUPigmentTransport{
    gl.texSubImage3D(gl.TEXTURE_3D,0,0,0,0,N,N,N,gl.RGBA,gl.UNSIGNED_BYTE,source.pack());
    this.time=source.time;this.seed=source.seed;this.flow=source.flow;this.morphology=source.morphology;
    this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
+   this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
  }
 }
