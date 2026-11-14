@@ -26,3 +26,10 @@ Velocity evolves analytically but is **not** dynamically solved from the dye fie
 - Test interaction undo/redo as approximate volume checkpoints, not exact time-forward semantic replay; the rollback restores a historical snapshot and simulation time.
 - Animated exports: fixed timestep alone does not imply periodic fluid-state loops. Later loops require true periodic state or verified repeatable cycle.
 - Full artist palette vault source has not yet been imported. Initial palette collection is intentionally labeled a starter set.
+
+## Phase 01B — morphology and flow vocabulary
+The initial density may be seeded by four distinct implicit/material structures: a torus/plume/ribbon (Vortex Cathedral), gyroid level-set bands (Gyroid Ghost), closest-distance sampling against a closed trefoil centerline (Trefoil Apparition), or three twisted helical pigment tubes (Braided Exorcism). These are *starting density distributions*, not extra simulation laws.
+
+The velocity system now selects between: (a) the original localized Gaussian vortices, (b) ABC/Beltrami-type trigonometric advection, and (c) paired Gaussian countercurrents. For each, analytical baseline divergence is zero up to finite-difference tolerance. User touch impulses intentionally are not divergence-free. Flow changes affect future advection without resetting persistent dye; genesis changes are queued until a confirmed New Design. Undo snapshots include the selected law and genesis morphology, but simulation replay does not yet yield exact trajectory-preserving undo.
+
+Browser-based WebGL smoke tests are blocked in the current sandbox environment, including localhost, so **no successful GPU shader compilation or iPhone Safari rendering is claimed**. Local numerical tests are not a replacement for this QA.

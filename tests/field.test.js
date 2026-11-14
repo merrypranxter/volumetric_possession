@@ -39,3 +39,64 @@ test("unperturbed analytic vortex field has near-zero finite-difference divergen
     assert.ok(Math.abs(d)<.0001,"divergence "+d+" at "+[x,y,z]);
   }
 });
+
+test("each genesis morphology is deterministic and produces a distinct volume",()=>{
+  const kinds=["cathedral","gyroid","trefoil","braid"],volumes=[];
+  for(const kind of kinds){
+    const a=new PigmentField(303),b=new PigmentField(303);
+    a.reset(303,kind);b.reset(303,kind);
+    assert.deepEqual(a.a,b.a);
+    assert.equal(a.morphology,kind);
+    assert.ok(a.a.every(Number.isFinite));
+    volumes.push(a.a.slice());
+  }
+  for(let i=0;i<volumes.length;i++)for(let j=i+1;j<volumes.length;j++){
+    let delta=0;
+    for(let k=0;k<volumes[i].length;k+=4)delta+=Math.abs(volumes[i][k]-volumes[j][k]);
+    assert.ok(delta>10,"genesis "+i+" and "+j+" must be structurally distinct");
+  }
+});
+
+test("all three baseline motion laws remain divergence-free without user impulses",()=>{
+  const f=new PigmentField(91),out=[0,0,0],h=.0002;
+  function component(p,i){f.velocity(...p,1,out);return out[i];}
+  for(const flow of ["cathedral","beltrami","countercurrent"]){
+    f.flow=flow;
+    for(const p of [[0,0,0],[.24,-.43,.62],[-.4,.2,-.19]]){
+      let div=0;
+      for(let i=0;i<3;i++){
+        const plus=p.slice(),minus=p.slice();plus[i]+=h;minus[i]-=h;
+        div+=(component(plus,i)-component(minus,i))/(2*h);
+      }
+      assert.ok(Math.abs(div)<.0002,flow+" divergence "+div);
+    }
+  }
+});
+
+test("flow switches preserve dye and clock, and snapshots restore genesis and flow",()=>{
+  const f=new PigmentField(515),initial=f.a.slice();
+  f.reset(515,"gyroid");
+  const state=f.snapshot();
+  const existing=f.a.slice();
+  f.flow="beltrami";
+  assert.deepEqual(f.a,existing);
+  f.step(1/15,1);
+  f.restore(state);
+  assert.equal(f.morphology,"gyroid");
+  assert.equal(f.flow,"cathedral");
+  assert.deepEqual(f.a,existing);
+  assert.notDeepEqual(f.a,initial);
+});
+
+test("each flow advects initialized 3D pigment while keeping density finite",()=>{
+  for(const mode of ["cathedral","beltrami","countercurrent"]){
+    const f=new PigmentField(313),old=f.a.slice();f.flow=mode;
+    f.step(1/15,1);
+    let diff=0;
+    for(let i=0;i<f.a.length;i+=4){
+      assert.ok(Number.isFinite(f.a[i]));
+      diff+=Math.abs(f.a[i]-old[i]);
+    }
+    assert.ok(diff>.01,mode+" did not transport material");
+  }
+});

@@ -4,8 +4,8 @@ A touch-first, mobile-aware mathematical volumetric art studio.
 
 ## Phase 01 — Living Volume
 **Current source:** `build/phase-01-living-volume` (not yet deployed). A pure static, no-build WebGL2 app with:
-- Persistent 28×28×28 three-channel pigment density; deterministic seeded torus/plume/ribbon.
-- CPU semi-Lagrangian dye advection (fixed 15 Hz), three analytic localized divergence-free vortices, temporary touch impulses.
+- Persistent 28×28×28 three-channel pigment density with four deterministic genesis structures: cathedral, gyroid, trefoil knot, and helix braid.
+- CPU semi-Lagrangian dye advection (fixed 15 Hz), three selectable divergence-free baseline fields (localized vortex, ABC/Beltrami-type, paired countercurrent), temporary touch impulses.
 - WebGL2 3D texture and ray marching through the volume.
 - Stir, Inject and Orbit modes; pointer cancellation rollback; bounded checkpoint Undo/Redo; explicit reseed confirmation.
 - Eight **starter** palettes, independent optical density/emission, mobile render quality, single-frame PNG.

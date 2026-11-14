@@ -21,7 +21,7 @@ const undo=[],redo=[];
 const status=text=>$("status").textContent=text;
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
 function snapshotCommand(before){undo.push({before,after:field.snapshot()});if(undo.length>9)undo.shift();redo.length=0;updateHistory();}
-function restore(s){field.restore(s);if(renderer)renderer.upload();}
+function restore(s){field.restore(s);$("flow").value=field.flow;$("genesis").value=field.morphology;if(renderer)renderer.upload();}
 function undoStroke(){if(!undo.length)return;const cmd=undo.pop();redo.push(cmd);restore(cmd.before);updateHistory();}
 function redoStroke(){if(!redo.length)return;const cmd=redo.pop();undo.push(cmd);restore(cmd.after);updateHistory();}
 function params(){const p=palettes[paletteSelect.value]||palettes["Prismatic Riot"];return p.map(rgb);}
@@ -39,11 +39,19 @@ for(const id of ["speed","force","brush","depth","density","glow"]){
   $(id).addEventListener("input",()=>{const val=Number($(id).value);const key=id==="density"?"gain":id;options[key]=val;$(id+"Text").textContent=val.toFixed(id==="brush"||id==="depth"?2:1);});
 }
 $("quality").addEventListener("change",()=>options.steps=({low:36,mid:50,high:72})[$("quality").value]);
+$("flow").addEventListener("change",()=>{
+  if(field.flow===$("flow").value)return;
+  const before=field.snapshot();
+  field.flow=$("flow").value;
+  snapshotCommand(before);
+  status("Changed motion law to "+$("flow").selectedOptions[0].textContent+" · pigment preserved");
+});
+$("genesis").addEventListener("change",()=>status("Genesis queued: "+$("genesis").selectedOptions[0].textContent+" · current artwork preserved"));
 $("background").addEventListener("change",draw);paletteSelect.addEventListener("change",draw);
 $("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Play":"Ⅱ Pause";status(paused?"Simulation paused":"Simulation resumed");});
 $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click",redoStroke);
-$("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;field.reset(field.seed);undo.length=0;redo.length=0;updateHistory();status("Restarted seed "+field.seed);});
-$("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;field.reset(seed);undo.length=0;redo.length=0;updateHistory();status("New design · seed "+seed);});
+$("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;field.reset(field.seed,field.morphology);$("genesis").value=field.morphology;undo.length=0;redo.length=0;updateHistory();status("Restarted "+field.morphology+" · seed "+field.seed);});
+$("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;field.reset(seed,$("genesis").value);undo.length=0;redo.length=0;updateHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
 document.addEventListener("keydown",event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redoStroke();else undoStroke();}});
 canvas.addEventListener("pointerdown",event=>{
@@ -104,6 +112,6 @@ function frame(timestamp){
 try{
   renderer=new VolumeRenderer(canvas,field);
   paletteSelect.value="Prismatic Riot";
-  status("3D pigment ready · seed "+field.seed+" · drag to stir");
+  status("3D pigment ready · "+field.morphology+" · seed "+field.seed+" · drag to stir");
   requestAnimationFrame(frame);
 }catch(err){status("Cannot start volume: "+err.message);console.error(err);}

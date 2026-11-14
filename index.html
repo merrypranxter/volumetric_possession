@@ -37,7 +37,7 @@ select{width:100%;max-width:100%;background:#241b32}
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME</span></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / PHASE 01B</span></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Interactive three-dimensional pigment volume"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 <div id="status" role="status">Preparing the volume…</div>
@@ -57,16 +57,16 @@ select{width:100%;max-width:100%;background:#241b32}
 <button class="tab" data-panel="light" aria-pressed="false">Light + color</button>
 </nav>
 <section class="panel open" id="motion">
-<div class="grid"><label>Vortex strength <output id="speedText">1.0</output><input id="speed" type="range" min="0" max="2.4" step=".1" value="1"></label>
+<div class="grid"><label>Flow law<select id="flow"><option value="cathedral">Vortex Cathedral</option><option value="beltrami">Beltrami Labyrinth</option><option value="countercurrent">Countercurrent Twins</option></select></label><label>Vortex strength <output id="speedText">1.0</output><input id="speed" type="range" min="0" max="2.4" step=".1" value="1"></label>
 <label>Touch force <output id="forceText">1.0</output><input id="force" type="range" min=".2" max="3" step=".1" value="1"></label>
 <label>Brush radius <output id="brushText">0.22</output><input id="brush" type="range" min=".07" max=".5" step=".01" value=".22"></label>
 <label>Touch depth <output id="depthText">0.00</output><input id="depth" type="range" min="-.75" max=".75" step=".05" value="0"></label></div>
-<p class="help">This first engine advects persistent 3D pigment through a time-varying analytic vortex field. Stir locally perturbs transport; Inject adds material. Orbit changes only the viewpoint.</p>
+<p class="help">These are different divergence-free baseline flow laws—not merely new speeds. Switching a flow changes future transport without resetting existing pigment. Stir adds a local temporary impulse; Inject paints density; Orbit changes only the viewpoint.</p>
 </section>
 <section class="panel" id="material">
-<div class="grid"><label>Injected pigment<select id="pigment"><option value="0">Pigment 1</option><option value="1">Pigment 2</option><option value="2">Pigment 3</option></select></label>
+<div class="grid"><label>Genesis shape (next design)<select id="genesis"><option value="cathedral">Vortex Cathedral</option><option value="gyroid">Gyroid Ghost</option><option value="trefoil">Trefoil Apparition</option><option value="braid">Braided Exorcism</option></select></label><label>Injected pigment<select id="pigment"><option value="0">Pigment 1</option><option value="1">Pigment 2</option><option value="2">Pigment 3</option></select></label>
 <label>Quality<select id="quality"><option value="low">Mobile / 36 ray steps</option><option value="mid" selected>Balanced / 50 ray steps</option><option value="high">Detailed / 72 ray steps</option></select></label></div>
-<p class="help">Volume: 28 × 28 × 28 evolving cells. Semi-Lagrangian backtracing preserves material history but introduces numerical diffusion. This is an artistic transport model, not a full pressure-projected Navier–Stokes solver.</p>
+<p class="help"><strong>Genesis does not change the current design.</strong> Choose a starting structure, then press New Design and confirm. Restart seed restores the current structure. Volume: 28 × 28 × 28 evolving cells. Semi-Lagrangian backtracing preserves material history but introduces numerical diffusion. This is an artistic transport model, not a full pressure-projected Navier–Stokes solver.</p>
 </section>
 <section class="panel" id="light">
 <div class="grid"><label>Palette<select id="palette"></select></label>

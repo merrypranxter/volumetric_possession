@@ -76,6 +76,8 @@ export class VolumeRenderer{
     const gl=canvas.getContext("webgl2",{alpha:false,antialias:false,preserveDrawingBuffer:true,powerPreference:"high-performance"});
     if(!gl)throw Error("This artwork needs WebGL2; your browser did not provide it.");
     this.gl=gl;
+    const supported=gl.getParameter(gl.MAX_3D_TEXTURE_SIZE);
+    if(supported<N)throw Error("GPU only supports 3D textures up to "+supported+"; needs "+N);
     const prog=gl.createProgram(),vs=compile(gl,gl.VERTEX_SHADER,vertex),fs=compile(gl,gl.FRAGMENT_SHADER,fragment);
     gl.attachShader(prog,vs);gl.attachShader(prog,fs);gl.linkProgram(prog);
     if(!gl.getProgramParameter(prog,gl.LINK_STATUS))throw Error("GL link: "+gl.getProgramInfoLog(prog));
@@ -87,6 +89,8 @@ export class VolumeRenderer{
     gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_3D,gl.TEXTURE_WRAP_R,gl.CLAMP_TO_EDGE);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT,1);
     gl.texImage3D(gl.TEXTURE_3D,0,gl.RGBA8,N,N,N,0,gl.RGBA,gl.UNSIGNED_BYTE,field.pack());
+    const uploadError=gl.getError();
+    if(uploadError!==gl.NO_ERROR)throw Error("3D texture upload failed (WebGL error "+uploadError+")");
     this.vao=gl.createVertexArray();this.uploaded=true;
   }
   upload(){
