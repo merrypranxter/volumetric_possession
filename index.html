@@ -135,7 +135,7 @@ body.art-only #colorLensMarker{display:none!important}
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / ELASTIC STRAND PUPPET 01R</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / GESTURE AFTERLIFE 01S</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div id="sculptMarkers" aria-hidden="true"></div><canvas id="curveOverlay" aria-hidden="true"></canvas><div id="colorLensMarker" hidden aria-hidden="true"></div><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -172,6 +172,27 @@ body.art-only #colorLensMarker{display:none!important}
 <label>Touch force <output id="forceText">1.0</output><input id="force" type="range" min=".2" max="3" step=".1" value="1"></label>
 <label>Brush radius <output id="brushText">0.22</output><input id="brush" type="range" min=".07" max=".5" step=".01" value=".22"></label>
 <label>Touch depth <output id="depthText">0.00</output><input id="depth" type="range" min="-.75" max=".75" step=".05" value="0"></label></div>
+<details class="subsystem" id="afterlifePanel" open>
+<summary>🌈 Gesture Afterlife — leave moving color inside the volume</summary>
+<div class="grid">
+<label>Touch trails<select id="afterlifeTarget">
+<option value="stir" selected>On · Stir gestures</option>
+<option value="all">On · Stir + Sculpt + Draw Flow</option>
+<option value="off">Off · no extra dye</option>
+</select></label>
+<label>Chromatic behavior<select id="afterlifeStyle">
+<option value="prism" selected>🌈 Prism chase · traveling hues</option>
+<option value="staccato">✳ Staccato · alternating channels</option>
+<option value="aurora">〰 Aurora · blended flowing ribbons</option>
+<option value="ghost">◌ Ghost · faint luminous residues</option>
+</select></label>
+<label>Trail strength <output id="afterlifeStrengthText">1.0</output>
+<input id="afterlifeStrength" type="range" min="0" max="2" step=".1" value="1"></label>
+<label>Trail width <output id="afterlifeWidthText">0.115</output>
+<input id="afterlifeWidth" type="range" min=".055" max=".28" step=".005" value=".115"></label>
+</div>
+<p class="help">Touch motions write actual pigment into the persistent 3D volume, then existing flow, fibers and folds stretch that color long after your hand leaves. Prism, Staccato, Aurora and Ghost select combinations of the current three palette colors—not hardcoded RGB overlays. Choose Off to keep your old Stir behavior. One stroke = one Undo. No additional 3D textures or simulation passes. To draw, select Stir and drag on the artwork.</p>
+</details>
 <details class="subsystem" id="sculptPanel" open>
 <summary>⟡ Flow Necromancer — persistent force anchors</summary>
 <div class="grid">
