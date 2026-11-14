@@ -130,6 +130,20 @@ export function pointFromScreen(canvas,camera,event,depth=0){
   const travel=dot(center.map((v,i)=>v-eye[i]),forward)/dot(dir,forward);
   return {point:eye.map((v,i)=>Math.max(-.98,Math.min(.98,v+dir[i]*travel))),right,up};
 }
+// Mathematically inverse of the cover-projection camera ray. Used to pick
+// persistent sculpt handles without a separate/incorrect screen-space camera.
+export function projectToScreen(canvas,camera,point){
+  const rect=canvas.getBoundingClientRect();
+  const {eye,forward,right,up}=cameraVectors(camera);
+  const relative=point.map((v,i)=>v-eye[i]);
+  const dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+  const distance=dot(relative,forward);
+  if(distance<.01)return null;
+  const [cx,cy]=coverProjection(rect.width/rect.height);
+  const uvx=dot(relative,right)/distance*1.55/cx;
+  const uvy=dot(relative,up)/distance*1.55/cy;
+  return {x:(uvx+1)*rect.width*.5,y:(1-uvy)*rect.height*.5,visible:Math.abs(uvx)<1.08&&Math.abs(uvy)<1.08};
+}
 export class VolumeRenderer{
   constructor(canvas,field){
     this.canvas=canvas;this.field=field;

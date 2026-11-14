@@ -8,7 +8,7 @@ const file=name=>readFileSync(resolve(root,name),"utf8");
 
 test("GPU transport shader has a runtime midpoint switch",()=>{
  const src=file("src/gpu-transport.js");
- assert.match(src,/uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled;/);
+ assert.match(src,/uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled,uSculptCount;/);
  assert.match(src,/vec3 velocity\(vec3 p,float t\)/);
  assert.match(src,/v=velocity\(mid,uTime\+\.5\*uDt\)/);
  assert.match(src,/uniform1i\(U\.uIntegrator,this\.integration==="midpoint"\?1:0\)/);

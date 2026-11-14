@@ -1,5 +1,6 @@
 import {forgeAt,forgePhase,FORGE_MODES} from "./filament-forge.js";
 import {FiberMemory} from "./fiber-memory.js";
+import {cloneSculptNodes,sculptVelocity} from "./flow-sculpt.js";
 // Persistent CPU 3D dye field. The analytic vortices are divergence-free individually.
 // Semi-Lagrangian transport is approximate and dissipative, not a Navier-Stokes solver.
 export const N = 28;
@@ -14,6 +15,7 @@ export class PigmentField {
     this.foldWrite=1.4;this.foldPersistence=.80;this.foldGrip=.35;
     this.fibers=new FiberMemory(N);this.fiberGrowth=2.3;this.fiberPersistence=.88;
     this.fiberBend=1;this.fiberGuidance=.65;this.fiberEnabled=true;
+    this.sculptNodes=[];
     this.forgeMode="rosette";this.forgePower=.75;this.forgeWidth=.17;this.forgePace=.65;
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
@@ -21,6 +23,7 @@ export class PigmentField {
     const valid=["cathedral","gyroid","trefoil","braid"];
     if(!valid.includes(morphology))throw Error("Unknown genesis morphology: "+morphology);
     this.seed=seed>>>0;this.morphology=morphology;this.time=0;this.impulses.length=0;
+    this.sculptNodes=[]; // New Design / Restart clears placed anchors, not tool settings.
     this.fibers.reset();
     const rng=random(this.seed),sx=rng()*.32-.16,sy=rng()*.22-.11,sz=rng()*.30-.15;
     // Pre-sample the closed trefoil core, so genesis is deterministic and inexpensive.
@@ -72,7 +75,8 @@ export class PigmentField {
   }
   snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,
     fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
-    fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,fibers:this.fibers.snapshot(),forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
+    fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,fibers:this.fibers.snapshot(),
+    sculptNodes:cloneSculptNodes(this.sculptNodes),forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
     this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
@@ -80,6 +84,7 @@ export class PigmentField {
     this.fiberGrowth=s.fiberGrowth??2.3;this.fiberPersistence=s.fiberPersistence??.88;
     this.fiberBend=s.fiberBend??1;this.fiberGuidance=s.fiberGuidance??.65;
     this.fiberEnabled=s.fiberEnabled??true;this.fibers.restore(s.fibers);
+    this.sculptNodes=cloneSculptNodes(s.sculptNodes||[]);
     this.forgeMode=FORGE_MODES.includes(s.forgeMode)?s.forgeMode:"rosette";
     this.forgePower=s.forgePower??.75;this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
     this.a.set(s.values);this.impulses.length=0;this.dirty=true;
@@ -139,6 +144,7 @@ export class PigmentField {
       vx+=impulse.v[0]*w;vy+=impulse.v[1]*w;vz+=impulse.v[2]*w;
     }
     out[0]=vx;out[1]=vy;out[2]=vz;
+    sculptVelocity(this.sculptNodes,x,y,z,t,out);
   }
   step(dt,speed){
     const a=this.a,b=this.b,v=[0,0,0],source=[0,0,0];
