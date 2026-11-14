@@ -102,3 +102,18 @@ Simulation arithmetic, finite values, zero-write baseline, positive accumulated 
 - JS parse and UI ID/HTML nesting checked; numerical cover projection gives equal world-angular scale per physical screen pixel for mobile portrait and desktop landscape.
 - Small CPU ray-box/mass sampling of the initial seeded volume suggests the fraction of viewport rays hitting significant material increases on a 393x852 viewport from 24% (previous square-camera mapping) to ~58% (new cover/closer mapping); on a 874x402 view ~5% to ~65%. These are **approximate geometric occupancy estimates**, not screenshots, browser performance benchmarks, or a guarantee of the same visual impression.
 - Renderer shaders and pinch interaction still need actual iPhone Safari testing. The environment lacks live WebGL2 frame verification. If frame time suffers, disable Wisp definition and choose Mobile quality.
+
+## Phase 01G — Filament Forge
+The source term is sampled analytically at all 28³ volume voxels after each dye advection step:
+`dyeNext[c] += dt * power * source[c](position, phase, width) * (1 - dyeNext[c])`, bounded to [0,1]. Source mode Off, or power=0, causes no injection; existing material continues to advect. `dt=0` touch-flush passes never create new source matter.
+
+Three genuinely different moving **3D manifolds**, one per pigment channel:
+- **Triple Helix Nerves:** three Gaussian tubes following `[x,y]=0.42[cos(5.3z+phase+2πc/3),sin(5.3z+phase+2πc/3)]`.
+- **Orbital Rosettes:** three separate lobed cylindrical loops with `r=.44+.16cos(5θ+phase+2πc/3)` and `y=.30sin(3θ-1.2phase+2πc/3)` where `θ=atan2(z,x)`. Density decays with squared distance to the centerline.
+- **Gyroid Sutures:** three gyroid-like iso-sheet layers of `g=sin(x')cos(y')+sin(y')cos(z')+sin(z')cos(x')`, phase-shifted coordinates, and iso-values `[-.88,0,.88]`. Its dose is multiplied by 0.13 because surfaces occupy much more volume than threads; this reduces sudden scene saturation.
+
+Phase = `(time + dt)*pace*.55 + seed*.000017`. The moving source loci are **not** the same as the flow: once injected, material persists, is carried by the independently selected analytic velocity fields, and contributes to the existing fold-memory system. Thus switching source types never regenerates or discards old dye.
+
+The existing RGB channels inherit whichever palette is selected. Source parameters are saved with the simulation checkpoint for Undo/Redo and preserved across seeded Reset and New Design (which remove history intentionally). No extra GPU volume or rendering pass: the shader reuses the 28 z-layer transport fragment pass and exposes uForgeMode/Power/Width/Pace. There is an equivalent CPU fallback.
+
+**Limitations:** RGB8 volume and 28³ discretization cannot resolve extremely thin fibers; semi-Lagrangian advection diffuses detail. Sources are bounded, but not mass-conservative, not pressure-projected fluid physics, and not guaranteed periodic. Gyroid is an implicit approximate sheet, not meshed geometry. Tests evaluate deterministic numerical behavior, but live shader compilation and iPhone Safari rendering performance remain unverified. 

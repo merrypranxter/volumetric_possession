@@ -24,6 +24,8 @@ const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,shadow:1,ligh
 const directions={side:[.75,.45,.4],top:[.2,1,.2],back:[-.6,.23,-.75]};
 const undo=[],redo=[];
 const foldEditDrafts=new Map();
+const structuralControls=["foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace"];
+function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower","forgeWidth","forgePace"].includes(id)?2:1;}
 const touches=new Map();
 let pinchSpan=0;
 const limitZoom=d=>Math.max(1.22,Math.min(5.6,d));
@@ -44,8 +46,10 @@ function clearHistory(){
 }
 function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=redo.length===0;}
 function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();}
-function restore(s){engine.restore(s);$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";for(const id of ["foldWrite","foldPersistence","foldGrip"]){
-  $(id).value=engine[id];$(id+"Text").textContent=Number(engine[id]).toFixed(id==="foldWrite"?1:2);
+function restore(s){engine.restore(s);$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
+$("forgeMode").value=engine.forgeMode||"off";field.forgeMode=engine.forgeMode;
+for(const id of structuralControls){
+  $(id).value=engine[id];$(id+"Text").textContent=Number(engine[id]).toFixed(structuralDecimals(id));
   field[id]=engine[id];
 }
 if(renderer&&engine===field)renderer.upload();}
@@ -62,15 +66,15 @@ for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>
   for(const t of document.querySelectorAll(".tab"))t.setAttribute("aria-pressed",String(t===b));
   for(const p of document.querySelectorAll(".panel"))p.classList.toggle("open",p.id===b.dataset.panel);
 });
-for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence","foldGlow","foldWrite","foldPersistence","foldGrip","wisp","prism"]){
+for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence","foldGlow","foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","wisp","prism"]){
   $(id).addEventListener("input",()=>{
-    if(["foldWrite","foldPersistence","foldGrip"].includes(id)&&!foldEditDrafts.has(id)){
+    if(structuralControls.includes(id)&&!foldEditDrafts.has(id)){
       foldEditDrafts.set(id,engine.snapshot());
     }
     const val=Number($(id).value);const key=id==="density"?"gain":id;if(id==="turbulence")engine.turbulence=val;
-    else if(["foldWrite","foldPersistence","foldGrip"].includes(id)){engine[id]=val;field[id]=val;}
-    else options[key]=val;$(id+"Text").textContent=val.toFixed(id==="brush"||id==="depth"||id==="foldGrip"||id==="foldPersistence"?2:1);});
-  if(["foldWrite","foldPersistence","foldGrip"].includes(id)){
+    else if(structuralControls.includes(id)){engine[id]=val;field[id]=val;}
+    else options[key]=val;$(id+"Text").textContent=val.toFixed(id==="brush"||id==="depth"?2:structuralDecimals(id));});
+  if(structuralControls.includes(id)){
     const commit=()=>{
       const original=foldEditDrafts.get(id);
       if(!original)return;
@@ -85,6 +89,15 @@ $("quality").addEventListener("change",()=>{
   const quality=$("quality").value;
   options.steps=({low:36,mid:50,high:72})[quality];
   options.lightSteps=({low:1,mid:2,high:4})[quality];
+});
+$("forgeMode").addEventListener("change",()=>{
+  const next=$("forgeMode").value;
+  if(engine.forgeMode===next)return;
+  const before=engine.snapshot();
+  engine.forgeMode=next;field.forgeMode=next;
+  snapshotCommand(before);
+  status(next==="off"?"Filament Forge off · existing pigment keeps moving":
+    "Filament Forge: "+$("forgeMode").selectedOptions[0].textContent+" · drawing new 3D material");
 });
 $("integration").addEventListener("change",()=>{
   const next=$("integration").value;
@@ -127,9 +140,9 @@ canvas.addEventListener("wheel",event=>{
 $("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Play":"Ⅱ Pause";status(paused?"Simulation paused":"Simulation resumed");});
 $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click",redoStroke);
 $("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
-for(const id of ["foldWrite","foldPersistence","foldGrip"])field[id]=engine[id];if(engine!==field)engine.reset(field);clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
+for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;if(engine!==field)engine.reset(field);clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
 $("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(seed,$("genesis").value);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
-for(const id of ["foldWrite","foldPersistence","foldGrip"])field[id]=engine[id];if(engine!==field)engine.reset(field);clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
+for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;if(engine!==field)engine.reset(field);clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
 document.addEventListener("keydown",event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redoStroke();else undoStroke();}});
 canvas.addEventListener("pointerdown",event=>{
@@ -212,6 +225,7 @@ try{
   try{engine=new GPUPigmentTransport(renderer,field);engineMode="GPU";}
   catch(gpuError){engine=field;engineMode="CPU";console.warn("GPU transport unavailable; CPU fallback",gpuError);}
   paletteSelect.value="Prismatic Riot";
+  $("forgeMode").value=engine.forgeMode;
   $("turbulence").value=field.turbulence;
   $("turbulenceText").textContent=field.turbulence.toFixed(1);
   $("engineBadge").textContent=engineMode+" transport";

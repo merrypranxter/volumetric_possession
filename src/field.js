@@ -1,3 +1,4 @@
+import {forgeAt,forgePhase,FORGE_MODES} from "./filament-forge.js";
 // Persistent CPU 3D dye field. The analytic vortices are divergence-free individually.
 // Semi-Lagrangian transport is approximate and dissipative, not a Navier-Stokes solver.
 export const N = 28;
@@ -10,6 +11,7 @@ export class PigmentField {
     this.a=new Float32Array(N*N*N*4);this.b=new Float32Array(this.a.length);
     this.bytes=new Uint8Array(this.a.length);this.impulses=[];this.turbulence=0;this.integration="euler";
     this.foldWrite=1.4;this.foldPersistence=.80;this.foldGrip=.35;
+    this.forgeMode="rosette";this.forgePower=.75;this.forgeWidth=.17;this.forgePace=.65;
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
   reset(seed,morphology=this.morphology){
@@ -64,11 +66,14 @@ export class PigmentField {
     }
     this.dirty=true;
   }
-  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,time:this.time,values:this.a.slice()};}
+  snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
     this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
-    this.foldPersistence=s.foldPersistence??.80;this.foldGrip=s.foldGrip??.35;this.a.set(s.values);this.impulses.length=0;this.dirty=true;
+    this.foldPersistence=s.foldPersistence??.80;this.foldGrip=s.foldGrip??.35;
+    this.forgeMode=FORGE_MODES.includes(s.forgeMode)?s.forgeMode:"rosette";
+    this.forgePower=s.forgePower??.75;this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
+    this.a.set(s.values);this.impulses.length=0;this.dirty=true;
   }
   stamp(p,r,channel,amount=.38){
     const lo=p.map(v=>clamp(Math.floor((v-r+1)*N*.5),0,N-1));
@@ -127,7 +132,9 @@ export class PigmentField {
     out[0]=vx;out[1]=vy;out[2]=vz;
   }
   step(dt,speed){
-    const a=this.a,b=this.b,v=[0,0,0];
+    const a=this.a,b=this.b,v=[0,0,0],source=[0,0,0];
+    const emit=dt>0&&this.forgePower>0&&this.forgeMode!=="off";
+    const phase=forgePhase(this.time+dt,this.forgePace,this.seed);
     for(let z=0;z<N;z++)for(let y=0;y<N;y++)for(let x=0;x<N;x++){
       const px=2*(x+.5)/N-1,py=2*(y+.5)/N-1,pz=2*(z+.5)/N-1;
       // Backtrace from end-of-step, optionally using curved RK2 trajectories.
@@ -153,6 +160,15 @@ export class PigmentField {
         const c00=a[j000+c]*(1-fx)+a[j100+c]*fx,c10=a[j010+c]*(1-fx)+a[j110+c]*fx;
         const c01=a[j001+c]*(1-fx)+a[j101+c]*fx,c11=a[j011+c]*(1-fx)+a[j111+c]*fx;
         b[i+c]=((c00*(1-fy)+c10*fy)*(1-fz)+(c01*(1-fy)+c11*fy)*fz)*(c===3?1:fade);
+      }
+      // Replenish persistent dye along moving 3D mathematical source manifolds.
+      // This is actual material injection; advection on future steps deforms the trails.
+      if(emit){
+        forgeAt(this.forgeMode,px,py,pz,phase,this.forgeWidth,source);
+        for(let c=0;c<3;c++){
+          const dose=dt*this.forgePower*source[c];
+          b[i+c]=clamp(b[i+c]+dose*(1-b[i+c]),0,1);
+        }
       }
       // Measure cross-flow pigment interface contrast in the previous material.
       // This is a bounded fold-writing proxy, NOT a finite-strain tensor.
