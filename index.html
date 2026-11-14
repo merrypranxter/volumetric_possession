@@ -211,7 +211,8 @@ body.art-only #colorLensMarker{display:none!important}
 <label>Echo ink <output id="echoStrengthText">0.85</output>
 <input id="echoStrength" type="range" min="0" max="1.5" step=".05" value=".85"></label>
 </div>
-<p class="help">Every few centimeters of your primary gesture may hatch two or three delayed offspring. They wander independently through real 3D space, depositing palette-linked pigment while existing forces carry their residue away. At most 12 live descendants and 6 newborn dabs per simulation tick; your own brush always has priority. Undo restores both pigment and unhatched offspring; Restart clears them.</p>
+<div class="actionbar"><button id="clearEchoes" type="button">✕ Dismiss wandering ghosts</button><span class="muted">Awaiting / moving: <output id="echoCount">0 / 12</output></span></div>
+<p class="help">Every few samples of your primary gesture may hatch two or three delayed offspring. They wander independently through real 3D space, depositing palette-linked pigment while existing forces carry their residue away. At most 12 live descendants and 6 newborn dabs per simulation tick; your own brush always has priority. Dismiss stops future ghost deposits without erasing existing dye; Undo can bring the ghosts back. Restart clears them.</p>
 </details>
 </details>
 <details class="subsystem" id="sculptPanel" open>
