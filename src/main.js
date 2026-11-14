@@ -504,10 +504,20 @@ function draw(){
     lightSteps:options.lightSteps,foldGlow:options.foldGlow,memoryView:options.memoryView,
     wisp:options.wisp,prism:options.prism,fiberLight:options.fiberLight,
     colorGrade:grade,windingDefects:projected});
+  $("echoCount").textContent=(engine.echoes?.length??0)+" / 12";
   updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();
 }
 function setMode(next){mode=next;for(const b of document.querySelectorAll(".mode"))b.setAttribute("aria-pressed",String(b.dataset.mode===mode));$("modeLabel").textContent={stir:"STIR · drag to disturb pigment",inject:"INJECT · paint into the volume",orbit:"ORBIT · drag to rotate camera",sculpt:"SCULPT · tap to anchor / drag glowing handles",curve:"DRAW FLOW · tug locally, drag a handle, or twist/pinch the force",neon:"NEON LENS · drag light focus / pinch lens radius"}[mode];updateColorLensMarker();updateSculptMarkers();drawCurveOverlay();}
 for(const b of document.querySelectorAll(".mode"))b.addEventListener("click",()=>setMode(b.dataset.mode));
+$("clearEchoes").addEventListener("click",()=>{
+  if(!engine.echoes?.length){status("No wandering ghosts to dismiss");return;}
+  const before=engine.snapshot();
+  const removed=engine.echoes.length;
+  engine.echoes.length=0;
+  snapshotCommand(before);
+  $("echoCount").textContent="0 / 12";
+  status("Dismissed "+removed+" ghost descendants · deposited pigment remains · Undo to restore");
+});
 for(const [id,digits] of [["afterlifeStrength",1],["afterlifeWidth",3],
   ["echoDelay",2],["echoDrift",1],["echoDuration",2],["echoStrength",2]]){
   $(id).addEventListener("input",()=>{
