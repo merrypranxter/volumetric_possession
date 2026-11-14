@@ -7,6 +7,7 @@ import {cloneFlowCurves} from "./flow-curve.js";
 import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
 import {cloneBreederParents,DEFAULT_BREED_SEED} from "./curve-breeder.js";
 import {cloneGeneGallery,cloneGeneSources} from "./gene-gallery.js";
+import {normalizeTraitLocks} from "./trait-locks.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
@@ -228,6 +229,7 @@ export class GPUPigmentTransport{
    this.livingAmount=source.livingAmount??.18;this.liveCurves=this.flowCurves;
    this.breederParents=cloneBreederParents(source.breederParents);
    this.breederSeed=source.breederSeed??DEFAULT_BREED_SEED;
+   this.breedTraitLocks=normalizeTraitLocks(source.breedTraitLocks);
    this.breederSources=cloneGeneSources(source.breederSources);
    this.geneGallery=cloneGeneGallery(source.geneGallery);this.geneNextSequence=source.geneNextSequence??1;
    this.impulses=[];this.pending=[];
@@ -333,6 +335,7 @@ export class GPUPigmentTransport{
      flowCurves:cloneFlowCurves(this.flowCurves),
      livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount,
      breederParents:cloneBreederParents(this.breederParents),breederSeed:this.breederSeed,
+     breedTraitLocks:normalizeTraitLocks(this.breedTraitLocks),
      breederSources:cloneGeneSources(this.breederSources),geneGallery:cloneGeneGallery(this.geneGallery),geneNextSequence:this.geneNextSequence};
  }
  restore(s){
@@ -351,6 +354,7 @@ export class GPUPigmentTransport{
    this.livingRate=s.livingRate??.65;this.livingAmount=s.livingAmount??.18;
    this.breederParents=cloneBreederParents(s.breederParents);
    this.breederSeed=s.breederSeed??DEFAULT_BREED_SEED;
+   this.breedTraitLocks=normalizeTraitLocks(s.breedTraitLocks);
    this.breederSources=cloneGeneSources(s.breederSources);
    this.geneGallery=cloneGeneGallery(s.geneGallery);this.geneNextSequence=s.geneNextSequence??1;
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
@@ -378,6 +382,7 @@ export class GPUPigmentTransport{
    this.livingRate=source.livingRate??.65;this.livingAmount=source.livingAmount??.18;
    this.breederParents=cloneBreederParents(source.breederParents);
    this.breederSeed=source.breederSeed??DEFAULT_BREED_SEED;
+   this.breedTraitLocks=normalizeTraitLocks(source.breedTraitLocks);
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
       this.livingMode,this.livingRate,this.livingAmount);
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;

@@ -1,6 +1,7 @@
 // Phase 01N — Mutant Family Album. Lightweight, safe, versioned mathematical
 // DNA archive. Contains NO volume textures, screenshots, or WebGL resources.
 import {cloneCurveGenome,cloneBreederParents} from "./curve-breeder.js";
+import {normalizeTraitLocks} from "./trait-locks.js";
 export const GALLERY_LIMIT=24;
 export const GENE_STORAGE_KEY="volumetric-possession-gene-album-v1";
 const idPattern=/^g[0-9a-z]+$/;
@@ -19,6 +20,8 @@ function canonicalEntry(e){
   return {id:e.id,label:safeName(e.label),genome,parents,
     generation:int(e.generation,0,100000)?e.generation:0,
     favorite:!!e.favorite,seed:int(e.seed,0,0xffffffff)?e.seed:null,
+    traitLocks:normalizeTraitLocks(e.traitLocks),
+    inheritance:e.inheritance&&typeof e.inheritance==="object"?Object.fromEntries(Object.entries(e.inheritance).filter(([k,v])=>["topology","shape","force","material","motion","dynamics"].includes(k)&&["Auto","A","B","C"].includes(v))):{},
     mutation:typeof e.mutation==="number"&&Number.isFinite(e.mutation)?
       Math.min(.5,Math.max(0,e.mutation)):null,
     sequence:int(e.sequence,1,0x7fffffff)?e.sequence:1};
@@ -43,7 +46,7 @@ export function addGeneSpecimen(gallery,genome,options={}){
     list.find(x=>x.id===ref.id)?.generation??0)):0;
   const entry=canonicalEntry({id,label:options.label||("Mutant #"+sequence),
     genome,parents,generation,favorite:!!options.favorite,seed:options.seed,
-    mutation:options.mutation,sequence});
+    mutation:options.mutation,traitLocks:options.traitLocks,inheritance:options.inheritance,sequence});
   if(list.length===GALLERY_LIMIT){
     const oldest=list.findIndex(e=>!e.favorite);
     if(oldest<0)throw Error("All 24 specimens are favorites; unstar one or delete a specimen");
@@ -80,7 +83,8 @@ export function serializeGeneBank(system){
     nextSequence:system.geneNextSequence||1,
     breederParents:cloneBreederParents(system.breederParents),
     breederSources:cloneGeneSources(system.breederSources),
-    breederSeed:system.breederSeed??314159};
+    breederSeed:system.breederSeed??314159,
+    breedTraitLocks:normalizeTraitLocks(system.breedTraitLocks)};
   return JSON.stringify(data,null,2);
 }
 export function parseGeneBank(value){
@@ -95,5 +99,6 @@ export function parseGeneBank(value){
   return {geneGallery:album,geneNextSequence:data.nextSequence,
     breederParents:cloneBreederParents(data.breederParents),
     breederSources:cloneGeneSources(data.breederSources),
-    breederSeed:data.breederSeed};
+    breederSeed:data.breederSeed,
+    breedTraitLocks:normalizeTraitLocks(data.breedTraitLocks)};
 }
