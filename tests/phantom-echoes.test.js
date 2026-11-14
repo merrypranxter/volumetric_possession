@@ -62,6 +62,9 @@ test("mobile caps apply to births, queued state and each fixed simulation step",
 test("CPU volume births are undoable and resume from checkpoint",()=>{
   const field=new PigmentField(1448);
   field.forgeMode="off";field.fiberEnabled=false;
+  const baseline=new PigmentField(1448);
+  baseline.forgeMode="off";baseline.fiberEnabled=false;
+  baseline.step(.2,0.75);
   const before=field.snapshot();
   field.queueEcho([0,0,0],[1,0,0],[.5,.3,.8],{...settings,delay:.1},.17);
   assert.ok(field.echoes.length>0);
@@ -69,8 +72,10 @@ test("CPU volume births are undoable and resume from checkpoint",()=>{
   assert.equal(saved.echoes.length,3);
   field.step(.2,0.75);
   assert.ok(field.echoes.length>0);
-  const changed=field.a.some((v,i)=>Math.abs(v-before.values[i])>1e-6);
-  assert.equal(changed,true);
+  // Crucial: compare identical motion with vs without echoes, not merely
+  // to pre-step pigment (which changes under ordinary advection).
+  const extraDye=field.a.some((v,i)=>i%4!==3&&v>baseline.a[i]+1e-5);
+  assert.equal(extraDye,true);
   field.restore(before);
   assert.equal(field.echoes.length,0);
   assert.deepEqual(Array.from(field.a),Array.from(before.values));
