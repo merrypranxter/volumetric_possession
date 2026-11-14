@@ -183,3 +183,22 @@ CPU uses `src/flow-sculpt.js`, called from PigmentField.velocity after baseline 
 
 ### Follow-on
 Potential next phase: genuinely editable 3D flow curves, split/merge gestures and deformation handles for sculptural topology, possibly requiring finer than 28³ volume resolution.
+
+## Phase 01J — Curve Witch: persistent 3D velocity fields drawn by touch
+
+**Artist interaction:** choose ⌁ Draw Flow, select a type and Touch Depth, draw across the full-viewport canvas. The 2D touch stroke is projected into the current camera-aligned world-depth plane, yielding a true **3D polyline** in object coordinates. A second stroke from another camera angle can occupy a different plane. The visible trace is a **control overlay only**; it is not painted into the rendering texture.
+
+On release, the drawn path is arc-length-resampled to at most eight evenly spaced 3D control points with endpoints preserved; samples shorter than 0.075 world units are ignored. Raw touch points are capped at 96 and progressively decimated, preventing unbounded transient memory. The user can tap near an existing trace to select it and drag to translate the whole 3D curve on its former camera-depth plane. Undo/Redo snapshots preserve full 3D positions, type, strength and width. Clear-all asks for confirmation, and New Design/Restart intentionally clear authored curves without regenerating prior pigment during ordinary edits. Art Only hides the interaction overlay.
+
+**Velocity equation:** for a voxel `x`, each curve selects the nearest point `q` on its piecewise-linear segments and that segment's normalized tangent `a`. For `d=x-q`, radius `r`, strength `s`:
+`g=0.55 s (0.82+0.18 sin(0.75t+2.1*curveIndex)) exp(-|d|²/(2r²))`,
+with influence ignored when `|d|>3r`.
+- **Stream:** `v += g a`.
+- **Coil:** `v += (g/r) (a × d)`.
+- **Gather:** `v -= (g/r) d`.
+
+The field uses at most two curves with seven segments each, checking the closest segment once per curve, rather than adding seven disconnected forces. CPU implementation: `src/flow-curve.js`; GPU shared velocity shader: `uCurveCount`, `uCurvePoints[16]`, `uCurveInfo[2]`. Both pigment and fiber GLSL passes share this math and get the same bounded uniform arrays. No extra volume, framebuffer or render pass is allocated. Empty curves incur only a zero-count guard and preserve previous simulation behavior.
+
+**Limitations:** spline-smooth mathematical tubes are **not** yet implemented; line-segment tangent direction can jump at corners (though arc-length resampling reduces finger jitter). Gather is deliberately compressible, Stream may add nonzero divergence because of its spatial envelope, Coil is only approximately solenoidal around straight segments and piecewise connections. This is not a pressure-projected fluid solver, volume-preserving deformation, or guaranteed temporal loop. GPU's repeated nearest-segment tests can tax older phones; at most two curves and disabling Fiber Nerves evolution offers a performance escape hatch. Actual WebGL2 compilation and Safari rendering/FPS are **still not verified** in a browser here.
+
+**QA:** CPU directionality/determinism/state and real material-effect checks; mocked dual GPU pass uniform packing, exact Undo/Redo and zero readbacks; camera-aware touch draw/select/move/recast/clear and Undo/Redo/Restart integration. Real device shader and pixel QA still required.

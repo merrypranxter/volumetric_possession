@@ -3,6 +3,7 @@
 import {N} from "./field.js";
 import {GPUFiberMemory} from "./gpu-fiber-memory.js";
 import {cloneSculptNodes} from "./flow-sculpt.js";
+import {cloneFlowCurves} from "./flow-curve.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
@@ -13,10 +14,11 @@ uniform sampler3D uPrev,uFiberPrev;
 uniform float uLayer,uDim,uTime,uDt,uSpeed,uSeedPhase,uTurb;
 uniform float uFoldWrite,uFoldPersistence,uFoldGrip,uFiberGuidance;
 uniform float uFiberGrowth,uFiberBend,uFiberPersistence; // shared header for director pass
-uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled,uSculptCount;
+uniform int uFlow,uImpulseCount,uStampCount,uIntegrator,uForgeMode,uFiberEnabled,uSculptCount,uCurveCount;
 uniform float uForgePower,uForgeWidth,uForgePace;
 uniform vec4 uImpulsePos[8],uImpulseVel[8],uStampPos[16],uStampColor[16];
 uniform vec4 uSculptPos[6],uSculptInfo[6];
+uniform vec4 uCurvePoints[16],uCurveInfo[2];
 out vec4 fragColor;
 vec3 velocity(vec3 p,float t){
  float x=p.x,y=p.y,z=p.z,k=uSeedPhase;
@@ -63,6 +65,30 @@ vec3 velocity(vec3 p,float t){
    if(spec.x<.5)v+=vec3(d.z,0.0,-d.x)*gain;
    else if(spec.x<1.5)v-=d*gain;
    else v+=d*gain;
+ }
+ // Persistent hand-drawn path fields, evaluated at the closest line segment.
+ // Each curve has at most eight points. The fiber pass reuses these definitions.
+ for(int ci=0;ci<2;ci++){
+   if(ci>=uCurveCount)break;
+   vec4 meta=uCurveInfo[ci];int n=int(meta.x+.5);
+   float nearest=1e10;vec3 d=vec3(0.0),axis=vec3(1.0,0.0,0.0);
+   for(int j=0;j<7;j++){
+     if(j>=n-1)break;
+     int k=ci*8+j;
+     vec3 a=uCurvePoints[k].xyz,b=uCurvePoints[k+1].xyz;
+     vec3 seg=b-a;float ls=dot(seg,seg);
+     if(ls<1e-9)continue;
+     float u=clamp(dot(p-a,seg)/ls,0.0,1.0);
+     vec3 delta=p-(a+u*seg);float dd=dot(delta,delta);
+     if(dd<nearest){nearest=dd;d=delta;axis=seg*inversesqrt(ls);}
+   }
+   float r=max(.12,meta.w);
+   if(nearest>9.0*r*r)continue;
+   float pulse=.82+.18*sin(t*.75+float(ci)*2.1);
+   float gain=.55*meta.z*pulse*exp(-nearest/(2.0*r*r));
+   if(meta.y<.5)v+=axis*gain;
+   else if(meta.y<1.5)v+=cross(axis,d)*(gain/r);
+   else v-=d*(gain/r);
  }
  return v;
 }
@@ -179,9 +205,9 @@ export class GPUPigmentTransport{
    gl.deleteShader(v);gl.deleteShader(f);
    if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error("GPU transport link: "+gl.getProgramInfoLog(p));
    this.program=p;this.vao=gl.createVertexArray();this.loc={};
-   const names=["uFiberPrev","uFiberEnabled","uFiberGuidance","uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uForgeMode","uForgePower","uForgeWidth","uForgePace","uImpulsePos","uImpulseVel","uStampPos","uStampColor","uSculptCount","uSculptPos","uSculptInfo"];
+   const names=["uFiberPrev","uFiberEnabled","uFiberGuidance","uPrev","uLayer","uDim","uTime","uDt","uSpeed","uSeedPhase","uTurb","uFlow","uImpulseCount","uStampCount","uIntegrator","uFoldWrite","uFoldPersistence","uFoldGrip","uForgeMode","uForgePower","uForgeWidth","uForgePace","uImpulsePos","uImpulseVel","uStampPos","uStampColor","uSculptCount","uSculptPos","uSculptInfo","uCurveCount","uCurvePoints","uCurveInfo"];
    for(const n of names)this.loc[n]=gl.getUniformLocation(p,n);
-   for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor","uSculptPos","uSculptInfo"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
+   for(const n of ["uImpulsePos","uImpulseVel","uStampPos","uStampColor","uSculptPos","uSculptInfo","uCurvePoints","uCurveInfo"])this.loc[n]=gl.getUniformLocation(p,n+"[0]");
    this.time=source.time;this.seed=source.seed;this.morphology=source.morphology;this.flow=source.flow;
    this.turbulence=source.turbulence||0;this.integration=source.integration||"euler";
    this.foldWrite=source.foldWrite??1.4;this.foldPersistence=source.foldPersistence??.80;this.foldGrip=source.foldGrip??.35;
@@ -194,6 +220,8 @@ export class GPUPigmentTransport{
    this.forgeMode=source.forgeMode??"rosette";this.forgePower=source.forgePower??.75;
    this.forgeWidth=source.forgeWidth??.17;this.forgePace=source.forgePace??.65;
    this.sculptNodes=cloneSculptNodes(source.sculptNodes||[]);
+   this.flowCurves=cloneFlowCurves(source.flowCurves||[]);
+   this.flowCurves=cloneFlowCurves(source.flowCurves||[]);
    this.impulses=[];this.pending=[];
    this.fibers=new GPUFiberMemory(renderer,VS,FS);
    renderer.externalSource=true;renderer.texture=this.front;
@@ -233,6 +261,17 @@ export class GPUPigmentTransport{
    gl.uniform1i(U.uSculptCount,nSculpt);
    gl.uniform4fv(U.uSculptPos,sculptPos);
    gl.uniform4fv(U.uSculptInfo,sculptInfo);
+   const curvePoints=new Float32Array(64),curveInfo=new Float32Array(8);
+   const nCurves=Math.min(2,this.flowCurves.length);
+   for(let i=0;i<nCurves;i++){
+     const c=this.flowCurves[i];
+     curveInfo.set([c.points.length,({stream:0,coil:1,gather:2})[c.type]??0,c.strength,c.r],i*4);
+     for(let j=0;j<Math.min(8,c.points.length);j++)
+       curvePoints.set([...c.points[j],0],i*32+j*4);
+   }
+   gl.uniform1i(U.uCurveCount,nCurves);
+   gl.uniform4fv(U.uCurvePoints,curvePoints);
+   gl.uniform4fv(U.uCurveInfo,curveInfo);
    const count=Math.min(16,this.pending.length),sp=new Float32Array(64),sc=new Float32Array(64);
    for(let i=0;i<count;i++){const s=this.pending[i];sp.set([...s.p,s.r],i*4);sc.set([...s.color,0],i*4);}
    gl.uniform1i(U.uStampCount,count);gl.uniform4fv(U.uStampPos,sp);gl.uniform4fv(U.uStampColor,sc);
@@ -251,7 +290,8 @@ export class GPUPigmentTransport{
      flow:this.flow,turbulence:this.turbulence,integration:this.integration,
      foldGrip:this.foldGrip,fiberGrowth:this.fiberGrowth,
      fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
-     fiberGuidance:this.fiberGuidance,impulses:this.impulses,sculptNodes:this.sculptNodes
+     fiberGuidance:this.fiberGuidance,impulses:this.impulses,sculptNodes:this.sculptNodes,
+     flowCurves:this.flowCurves
    });
    [this.front,this.back]=[this.back,this.front];this.renderer.texture=this.front;
    this.time+=dt;this.pending.splice(0,count);
@@ -277,7 +317,8 @@ export class GPUPigmentTransport{
      forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,
      fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,
      fiberBend:this.fiberBend,fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,
-     sculptNodes:cloneSculptNodes(this.sculptNodes)};
+     sculptNodes:cloneSculptNodes(this.sculptNodes),
+     flowCurves:cloneFlowCurves(this.flowCurves)};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
@@ -290,6 +331,7 @@ export class GPUPigmentTransport{
    this.fiberBend=s.fiberBend??1;this.fiberGuidance=s.fiberGuidance??.65;
    this.fiberEnabled=s.fiberEnabled??true;
    this.sculptNodes=cloneSculptNodes(s.sculptNodes||[]);
+   this.flowCurves=cloneFlowCurves(s.flowCurves||[]);
    this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
    this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
