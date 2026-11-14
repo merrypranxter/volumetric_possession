@@ -195,14 +195,14 @@ body.art-only #colorLensMarker{display:none!important}
 </details>
 <details class="subsystem" id="curvePanel" open>
 <summary>⌁ Curve Witch — puppet the actual 3D forces</summary>
-<p class="help">Grab a glowing strand between its control dots to bend the local force geometry; Reach controls how much of its length follows, Tension controls how hard it bends. Choose Translate to move the entire strand instead. Two fingers still twist and pinch the selected strand. All edits affect real pigment advection and save as one Undo step per gesture.</p>
+<p class="help">Grab a glowing strand between its control dots to bend the local force geometry; Reach controls how much of its length follows, Tension controls how hard it bends. Choose Translate to move the entire strand, or Edit Control Points to precisely drag an individual dot. Two fingers still twist and pinch the selected strand. All edits affect real pigment advection and save as one Undo step per gesture.</p>
 <div class="grid">
 <label>Stroke behavior<select id="curveType">
 <option value="stream">➝ Stream · carry along path</option>
 <option value="coil">🌀 Coil · twist around path</option>
 <option value="gather">◉ Gather · pull toward path</option>
 </select></label>
-<label>Grab behavior<select id="curveDragBehavior"><option value="tug" selected>✋ Elastic tug · bend nearby</option><option value="move">↔ Translate whole strand</option></select></label>
+<label>Grab behavior<select id="curveDragBehavior"><option value="tug" selected>✋ Elastic tug · bend nearby</option><option value="move">↔ Translate whole strand</option><option value="handle">• Edit control points</option></select></label>
 <label>Elastic reach <output id="curveTugReachText">0.22</output><input id="curveTugReach" type="range" min=".07" max=".70" step=".01" value=".22"></label>
 <label>Elastic tension <output id="curveTugPowerText">1.0</output><input id="curveTugPower" type="range" min=".2" max="2.5" step=".1" value="1"></label>
 <label>Drawn curves <output id="curveCount">0 / 2</output><span class="muted">Two curves, eight control points each</span></label>
