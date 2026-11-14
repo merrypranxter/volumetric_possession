@@ -2,6 +2,7 @@ import {PigmentField} from "./field.js";
 import {VolumeRenderer,pointFromScreen,projectToScreen,cameraVectors} from "./render.js";
 import {MAX_SCULPT_NODES,newSculptNode,summonSculptTriad} from "./flow-sculpt.js";
 import {MAX_CURVES,MAX_CURVE_POINTS,newFlowCurve,resampleStroke} from "./flow-curve.js";
+import {splitFlowCurve,braidFlowCurve} from "./curve-topology.js";
 import {GPUPigmentTransport} from "./gpu-transport.js";
 const $=id=>document.getElementById(id);
 const palettes={
@@ -29,7 +30,7 @@ const foldEditDrafts=new Map();
 const structuralControls=["foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","fiberGrowth","fiberPersistence","fiberBend","fiberGuidance"];
 function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower","forgeWidth","forgePace","fiberPersistence","fiberGuidance"].includes(id)?2:1;}
 const touches=new Map();
-let selectedSculpt=-1,selectedCurve=-1;
+let selectedSculpt=-1,selectedCurve=-1,selectedHandle=-1;
 const sculptMarkerContainer=$("sculptMarkers");
 const sculptSymbols={vortex:"⟳",pull:"◉",push:"✹"};
 function sculptSelectionUI(){
@@ -82,6 +83,12 @@ function curveSelectionUI(){
   if(selectedCurve>=curves.length)selectedCurve=-1;
   $("curveCount").textContent=curves.length+" / "+MAX_CURVES;
   const c=curves[selectedCurve];
+  if(!c||selectedHandle>=c.points.length)selectedHandle=-1;
+  $("curveHandleText").textContent=c&&selectedHandle>=0?
+    (selectedHandle+1)+" / "+c.points.length:"none";
+  $("splitCurve").disabled=curves.length!==1||!c||selectedHandle<=0||
+    selectedHandle>=c.points.length-1;
+  $("braidCurve").disabled=curves.length!==1||!c;
   if(c){
     $("curveType").value=c.type;$("curveStrength").value=c.strength;
     $("curveStrengthText").textContent=c.strength.toFixed(1);
@@ -116,8 +123,35 @@ function drawCurveOverlay(){
       curveContext.beginPath();curveContext.arc(p.x,p.y,chosen?4.5:3.2,0,Math.PI*2);
       curveContext.fill();
     }
+    if(chosen){
+      for(let k=0;k<curve.points.length;k++){
+        const pt=projectToScreen(canvas,camera,curve.points[k]);
+        if(!pt||!pt.visible)continue;
+        const activeHandle=k===selectedHandle;
+        curveContext.beginPath();curveContext.arc(pt.x,pt.y,activeHandle?7:4.5,0,Math.PI*2);
+        curveContext.fillStyle=activeHandle?"#fff":"#190a2c";
+        curveContext.fill();
+        curveContext.lineWidth=activeHandle?3:2;
+        curveContext.strokeStyle=activeHandle?"#ffed6b":curveHues[curve.type];
+        curveContext.stroke();
+      }
+    }
   }
   curveContext.globalAlpha=1;
+}
+function pickCurveHandle(event){
+  const curve=engine.flowCurves[selectedCurve];
+  if(!curve)return -1;
+  const rect=canvas.getBoundingClientRect();
+  const x=event.clientX-rect.left,y=event.clientY-rect.top;
+  let best=-1,dist=20*20;
+  for(let k=0;k<curve.points.length;k++){
+    const point=projectToScreen(canvas,camera,curve.points[k]);
+    if(!point||!point.visible)continue;
+    const d=(point.x-x)**2+(point.y-y)**2;
+    if(d<dist){dist=d;best=k;}
+  }
+  return best;
 }
 function nearestCurve(event){
   const rect=canvas.getBoundingClientRect();
@@ -244,7 +278,31 @@ $("clearSculpt").addEventListener("click",()=>{
   updateSculptMarkers();status("Cleared flow anchors · pigment preserved");
 });
 // Curve Witch editing: one checkpoint per operation, never every pointer move.
-$("selectDrawFlow").addEventListener("click",()=>{setMode("curve");status("Draw a flowing 3D curve; two can coexist");});
+$("selectDrawFlow").addEventListener("click",()=>{setMode("curve");status("Draw flow · tap a dot to bend, or draw a new path");});
+for(const [id,digits] of [["braidTurns",2],["braidSpread",2]]){
+  $(id).addEventListener("input",()=>{$(id+"Text").textContent=Number($(id).value).toFixed(digits);});
+}
+$("splitCurve").addEventListener("click",()=>{
+  const curve=engine.flowCurves[selectedCurve];
+  if(!curve||engine.flowCurves.length!==1||selectedHandle<=0||
+     selectedHandle>=curve.points.length-1)return;
+  const before=engine.snapshot();
+  const halves=splitFlowCurve(curve,selectedHandle);
+  engine.flowCurves.splice(selectedCurve,1,...halves);
+  selectedCurve=1;selectedHandle=-1;
+  curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
+  status("Curve split into two independent forces · the junction remains aligned");
+});
+$("braidCurve").addEventListener("click",()=>{
+  const curve=engine.flowCurves[selectedCurve];
+  if(!curve||engine.flowCurves.length!==1)return;
+  const before=engine.snapshot();
+  const pair=braidFlowCurve(curve,Number($("braidTurns").value),Number($("braidSpread").value));
+  engine.flowCurves.splice(selectedCurve,1,...pair);
+  selectedCurve=0;selectedHandle=Math.min(3,pair[0].points.length-2);
+  curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
+  status("Two real 3D braided force strands · both edit independently");
+});
 $("curveType").addEventListener("change",()=>{
   const c=engine.flowCurves?.[selectedCurve];
   if(!c||c.type===$("curveType").value)return;
@@ -271,13 +329,13 @@ for(const [id,key,digits] of [["curveStrength","strength",1],["curveWidth","r",2
 $("removeCurve").addEventListener("click",()=>{
   if(!engine.flowCurves[selectedCurve])return;
   const before=engine.snapshot();engine.flowCurves.splice(selectedCurve,1);
-  selectedCurve=-1;curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
+  selectedCurve=-1;selectedHandle=-1;curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
   status("Curve removed · stored pigment preserved");
 });
 $("clearCurves").addEventListener("click",()=>{
   if(!engine.flowCurves.length||!confirm("Remove all drawn flow curves? The pigment will remain."))return;
   const before=engine.snapshot();engine.flowCurves.length=0;
-  selectedCurve=-1;curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
+  selectedCurve=-1;selectedHandle=-1;curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
   status("Flow curves cleared · pigment preserved");
 });
 $("quality").addEventListener("change",()=>{
@@ -344,9 +402,9 @@ canvas.addEventListener("wheel",event=>{
 $("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Play":"Ⅱ Pause";status(paused?"Simulation paused":"Simulation resumed");});
 $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click",redoStroke);
 $("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
-for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
+for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
 $("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(seed,$("genesis").value);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
-for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
+for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
 document.addEventListener("keydown",event=>{if((event.metaKey||event.ctrlKey)&&event.key.toLowerCase()==="z"){event.preventDefault();if(event.shiftKey)redoStroke();else undoStroke();}});
 canvas.addEventListener("pointerdown",event=>{
@@ -363,21 +421,28 @@ canvas.addEventListener("pointerdown",event=>{
   if(active)return;
   active={id:event.pointerId,x:event.clientX,y:event.clientY,mode,
     before:mode==="orbit"?null:engine.snapshot(),changed:false,sculptIndex:-1,
-    curveIndex:-1,curveMoving:false,curveRaw:null};
+    curveIndex:-1,curveMoving:false,curveRaw:null,curveHandle:-1};
   if(mode==="curve"){
-    const found=nearestCurve(event);
-    if(found>=0){
-      selectedCurve=found;active.curveIndex=found;active.curveMoving=true;
-      status("Selected flow curve · drag to reposition, or change its settings");
+    const handle=pickCurveHandle(event);
+    if(handle>=0){
+      active.curveIndex=selectedCurve;active.curveHandle=handle;
+      selectedHandle=handle;
+      status("Bend control point "+(handle+1)+" · release to save one Undo step");
     }else{
+      const found=nearestCurve(event);
+      if(found>=0){
+        selectedCurve=found;selectedHandle=-1;active.curveIndex=found;active.curveMoving=true;
+        status("Selected entire curve · drag its line to translate it");
+      }else{
       if(engine.flowCurves.length>=MAX_CURVES){
         engine.release?.(active.before);active=null;
         status("Two curves maximum · select/remove one first");
         return;
       }
-      selectedCurve=-1;
+      selectedCurve=-1;selectedHandle=-1;
       active.curveRaw=[pointFromScreen(canvas,camera,event,options.depth).point];
       status("Drawing a 3D force path · release to finish");
+      }
     }
     curveSelectionUI();drawCurveOverlay();
   }
@@ -423,7 +488,19 @@ canvas.addEventListener("pointermove",event=>{
   const oldX=active.x,oldY=active.y;
   active.x=event.clientX;active.y=event.clientY;
   if(currentMode==="curve"){
-    if(active.curveMoving){
+    if(active.curveHandle>=0){
+      const curve=engine.flowCurves[active.curveIndex];
+      const point=curve?.points[active.curveHandle];
+      if(point){
+        const forward=cameraVectors(camera).forward;
+        const depth=point.reduce((sum,v,i)=>sum+v*forward[i],0);
+        const next=pointFromScreen(canvas,camera,event,depth).point.map(v=>Math.max(-.93,Math.min(.93,v)));
+        if(Math.hypot(...next.map((v,i)=>v-point[i]))>1e-5){
+          curve.points[active.curveHandle]=next;
+          active.changed=true;
+        }
+      }
+    }else if(active.curveMoving){
       const curve=engine.flowCurves[active.curveIndex];
       if(curve){
         const forward=cameraVectors(camera).forward;
@@ -448,7 +525,7 @@ canvas.addEventListener("pointermove",event=>{
             engine.flowCurves.push(newFlowCurve($("curveType").value,sampled,
               Number($("curveWidth").value),Number($("curveStrength").value)));
             active.curveIndex=engine.flowCurves.length-1;
-            selectedCurve=active.curveIndex;
+            selectedCurve=active.curveIndex;selectedHandle=-1;
           }else engine.flowCurves[active.curveIndex].points=sampled;
           active.changed=true;
         }
@@ -492,6 +569,11 @@ function completePointer(event,cancelled){
       snapshotCommand(active.before);
     }
     else engine.release?.(active.before);
+  }
+  if(active.mode==="curve"&&active.changed&&!cancelled&&active.curveRaw&&
+     active.curveIndex>=0){
+    const points=engine.flowCurves[active.curveIndex]?.points;
+    if(points?.length>2)selectedHandle=Math.floor((points.length-1)/2);
   }
   active=null;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();updateSculptMarkers();
 }
