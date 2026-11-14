@@ -5,6 +5,7 @@ import {GPUFiberMemory} from "./gpu-fiber-memory.js";
 import {cloneSculptNodes} from "./flow-sculpt.js";
 import {cloneFlowCurves} from "./flow-curve.js";
 import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
+import {cloneBreederParents,DEFAULT_BREED_SEED} from "./curve-breeder.js";
 const VS=`#version 300 es
 precision highp float;
 void main(){vec2 p=vec2(gl_VertexID==1?3.0:-1.0,gl_VertexID==2?3.0:-1.0);gl_Position=vec4(p,0.0,1.0);}`;
@@ -224,6 +225,8 @@ export class GPUPigmentTransport{
    this.flowCurves=cloneFlowCurves(source.flowCurves||[]);
    this.livingMode=source.livingMode??"still";this.livingRate=source.livingRate??.65;
    this.livingAmount=source.livingAmount??.18;this.liveCurves=this.flowCurves;
+   this.breederParents=cloneBreederParents(source.breederParents);
+   this.breederSeed=source.breederSeed??DEFAULT_BREED_SEED;
    this.impulses=[];this.pending=[];
    this.fibers=new GPUFiberMemory(renderer,VS,FS);
    renderer.externalSource=true;renderer.texture=this.front;
@@ -325,7 +328,8 @@ export class GPUPigmentTransport{
      fiberBend:this.fiberBend,fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,
      sculptNodes:cloneSculptNodes(this.sculptNodes),
      flowCurves:cloneFlowCurves(this.flowCurves),
-     livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount};
+     livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount,
+     breederParents:cloneBreederParents(this.breederParents),breederSeed:this.breederSeed};
  }
  restore(s){
    if(s.kind!=="gpu")throw Error("Expected a GPU checkpoint");
@@ -341,6 +345,8 @@ export class GPUPigmentTransport{
    this.flowCurves=cloneFlowCurves(s.flowCurves||[]);
    this.livingMode=LIVING_MODES.includes(s.livingMode)?s.livingMode:"still";
    this.livingRate=s.livingRate??.65;this.livingAmount=s.livingAmount??.18;
+   this.breederParents=cloneBreederParents(s.breederParents);
+   this.breederSeed=s.breederSeed??DEFAULT_BREED_SEED;
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
       this.livingMode,this.livingRate,this.livingAmount);
    this.forgeMode=s.forgeMode??"rosette";this.forgePower=s.forgePower??.75;
@@ -364,6 +370,8 @@ export class GPUPigmentTransport{
    this.flowCurves=cloneFlowCurves(source.flowCurves||[]);
    this.livingMode=LIVING_MODES.includes(source.livingMode)?source.livingMode:"still";
    this.livingRate=source.livingRate??.65;this.livingAmount=source.livingAmount??.18;
+   this.breederParents=cloneBreederParents(source.breederParents);
+   this.breederSeed=source.breederSeed??DEFAULT_BREED_SEED;
    this.liveCurves=evaluateLivingCurves(this.flowCurves,this.time,
       this.livingMode,this.livingRate,this.livingAmount);
    this.pending.length=0;this.impulses.length=0;this.renderer.texture=this.front;
