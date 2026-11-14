@@ -5,6 +5,8 @@ import {GPUPigmentTransport} from "../src/gpu-transport.js";
 import {newFlowCurve} from "../src/flow-curve.js";
 import {braidFlowCurve} from "../src/curve-topology.js";
 import {evaluateLivingCurves} from "../src/living-braid.js";
+import {nurseryStarters} from "../src/curve-breeder.js";
+import {addGeneSpecimen,cloneGeneGallery,cloneGeneSources} from "../src/gene-gallery.js";
 
 function mockGL(){
  let serial=0,draws=0,copies=0,uploads=0,reads=0;
@@ -62,5 +64,40 @@ test("living braid uploads same moving geometry to dye and fiber without new pas
  assert.equal(gpu.flowCurves.length,0);
  assert.equal(gpu.livingMode,"unravel","restart retains selected living mode");
  assert.equal(stats().uploads,2);
+ assert.equal(stats().reads,0);
+});
+
+test("GPU scene checkpoint, Undo and Reset preserve the 3-parent family album",()=>{
+ const {gl,stats}=mockGL();
+ const source=new PigmentField(47),parents=nurseryStarters();
+ let album=[],sequence=1,refs=[];
+ for(let i=0;i<3;i++){
+   const result=addGeneSpecimen(album,parents[i],{sequence,label:"Ancestor "+(i+1)});
+   album=result.gallery;sequence=result.nextSequence;
+   refs.push({id:result.record.id,label:result.record.label});
+ }
+ source.geneGallery=cloneGeneGallery(album);
+ source.geneNextSequence=sequence;
+ source.breederParents=parents;
+ source.breederSources=cloneGeneSources(refs);
+ const renderer={gl,texture:gl.createTexture(),fiberTexture:gl.createTexture()};
+ const gpu=new GPUPigmentTransport(renderer,source);
+ assert.deepEqual(gpu.geneGallery,source.geneGallery);
+ assert.deepEqual(gpu.breederSources,source.breederSources);
+ const snapshot=gpu.snapshot();
+ gpu.geneGallery[0].label="Evil mutation";
+ gpu.breederSources[0].id="untracked";
+ gpu.geneNextSequence=88;
+ assert.equal(snapshot.geneGallery[0].label,"Ancestor 1");
+ gpu.restore(snapshot);
+ assert.deepEqual(gpu.geneGallery,source.geneGallery);
+ assert.deepEqual(gpu.breederSources,source.breederSources);
+ assert.equal(gpu.geneNextSequence,4);
+ assert.equal(stats().copies,N*4);
+ gpu.release(snapshot);
+ source.reset(48);gpu.reset(source);
+ assert.deepEqual(gpu.geneGallery,source.geneGallery);
+ assert.equal(gpu.flowCurves.length,0);
+ assert.equal(gpu.geneNextSequence,4);
  assert.equal(stats().reads,0);
 });
