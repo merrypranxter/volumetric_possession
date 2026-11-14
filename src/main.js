@@ -3,6 +3,8 @@ import {VolumeRenderer,pointFromScreen,projectToScreen,cameraVectors} from "./re
 import {MAX_SCULPT_NODES,newSculptNode,summonSculptTriad} from "./flow-sculpt.js";
 import {MAX_CURVES,MAX_CURVE_POINTS,newFlowCurve,resampleStroke} from "./flow-curve.js";
 import {splitFlowCurve,braidFlowCurve} from "./curve-topology.js";
+import {cloneFlowCurves} from "./flow-curve.js";
+import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
 import {GPUPigmentTransport} from "./gpu-transport.js";
 const $=id=>document.getElementById(id);
 const palettes={
@@ -27,10 +29,12 @@ const options={speed:1,force:1,brush:.22,depth:0,gain:4.5,glow:1.2,shadow:1,ligh
 const directions={side:[.75,.45,.4],top:[.2,1,.2],back:[-.6,.23,-.75]};
 const undo=[],redo=[];
 const foldEditDrafts=new Map();
-const structuralControls=["foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","fiberGrowth","fiberPersistence","fiberBend","fiberGuidance"];
-function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower","forgeWidth","forgePace","fiberPersistence","fiberGuidance"].includes(id)?2:1;}
+const structuralControls=["foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","fiberGrowth","fiberPersistence","fiberBend","fiberGuidance","livingRate","livingAmount"];
+function structuralDecimals(id){return ["foldGrip","foldPersistence","forgePower","forgeWidth","forgePace","fiberPersistence","fiberGuidance","livingRate","livingAmount"].includes(id)?2:1;}
 const touches=new Map();
 let selectedSculpt=-1,selectedCurve=-1,selectedHandle=-1;
+const displayFlowCurves=()=>evaluateLivingCurves(engine.flowCurves,engine.time,
+  engine.livingMode,engine.livingRate,engine.livingAmount);
 const sculptMarkerContainer=$("sculptMarkers");
 const sculptSymbols={vortex:"⟳",pull:"◉",push:"✹"};
 function sculptSelectionUI(){
@@ -96,6 +100,11 @@ function curveSelectionUI(){
   }
   $("removeCurve").disabled=!c;
   $("clearCurves").disabled=curves.length===0;
+  $("bakeLiving").disabled=curves.length===0||engine.livingMode==="still"||
+      engine.livingAmount<=0||engine.livingRate<=0;
+  $("livingStatus").textContent=engine.livingMode==="still"?
+    "Resting geometry":(engine.livingMode==="unravel"||engine.livingMode==="reconnect")&&curves.length!==2?
+    "Draw or braid two curves":"Evolving at t = "+engine.time.toFixed(1)+" s";
 }
 function drawCurveOverlay(){
   if(!curveContext)return;
@@ -105,8 +114,12 @@ function drawCurveOverlay(){
   curveContext.setTransform(w/rect.width,0,0,h/rect.height,0,0);
   curveContext.clearRect(0,0,rect.width,rect.height);
   if(mode!=="curve")return;
-  for(let index=0;index<engine.flowCurves.length;index++){
-    const curve=engine.flowCurves[index],pts=curve.points
+  const live=displayFlowCurves();
+  $("livingStatus").textContent=engine.livingMode==="still"?"Resting geometry":
+    (engine.livingMode==="unravel"||engine.livingMode==="reconnect")&&live.length!==2?
+    "Draw or braid two curves":"Evolving at t = "+engine.time.toFixed(1)+" s";
+  for(let index=0;index<live.length;index++){
+    const curve=live[index],pts=curve.points
       .map(p=>projectToScreen(canvas,camera,p)).filter(Boolean);
     if(pts.length<2)continue;
     const chosen=index===selectedCurve;
@@ -140,7 +153,7 @@ function drawCurveOverlay(){
   curveContext.globalAlpha=1;
 }
 function pickCurveHandle(event){
-  const curve=engine.flowCurves[selectedCurve];
+  const curve=displayFlowCurves()[selectedCurve];
   if(!curve)return -1;
   const rect=canvas.getBoundingClientRect();
   const x=event.clientX-rect.left,y=event.clientY-rect.top;
@@ -157,8 +170,8 @@ function nearestCurve(event){
   const rect=canvas.getBoundingClientRect();
   const x=event.clientX-rect.left,y=event.clientY-rect.top;
   let best=-1,bestDist2=24*24;
-  for(let k=0;k<engine.flowCurves.length;k++){
-    const pts=engine.flowCurves[k].points.map(p=>projectToScreen(canvas,camera,p));
+  for(const [k,curve] of displayFlowCurves().entries()){
+    const pts=curve.points.map(p=>projectToScreen(canvas,camera,p));
     for(let j=1;j<pts.length;j++){
       if(!pts[j]||!pts[j-1])continue;
       const a=pts[j-1],b=pts[j],sx=b.x-a.x,sy=b.y-a.y,ss=sx*sx+sy*sy;
@@ -190,6 +203,7 @@ function updateHistory(){$("undo").disabled=undo.length===0;$("redo").disabled=r
 function snapshotCommand(before){undo.push({before,after:engine.snapshot()});if(undo.length>9)releaseCommands([undo.shift()]);releaseCommands(redo);redo.length=0;updateHistory();}
 function restore(s){engine.restore(s);curveSelectionUI();drawCurveOverlay();sculptSelectionUI();updateSculptMarkers();$("flow").value=engine.flow;$("genesis").value=engine.morphology;$("turbulence").value=engine.turbulence||0;$("turbulenceText").textContent=(engine.turbulence||0).toFixed(1);$("integration").value=engine.integration||"euler";
 $("forgeMode").value=engine.forgeMode||"off";field.forgeMode=engine.forgeMode;
+$("livingMode").value=engine.livingMode||"still";field.livingMode=engine.livingMode;
 $("fiberEnabled").value=engine.fiberEnabled?"on":"off";field.fiberEnabled=engine.fiberEnabled;
 for(const id of structuralControls){
   $(id).value=engine[id];$(id+"Text").textContent=Number(engine[id]).toFixed(structuralDecimals(id));
@@ -210,7 +224,7 @@ for(const b of document.querySelectorAll(".tab"))b.addEventListener("click",()=>
   for(const t of document.querySelectorAll(".tab"))t.setAttribute("aria-pressed",String(t===b));
   for(const p of document.querySelectorAll(".panel"))p.classList.toggle("open",p.id===b.dataset.panel);
 });
-for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence","foldGlow","foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","fiberGrowth","fiberPersistence","fiberBend","fiberGuidance","fiberLight","wisp","prism"]){
+for(const id of ["speed","force","brush","depth","density","glow","shadow","turbulence","foldGlow","foldWrite","foldPersistence","foldGrip","forgePower","forgeWidth","forgePace","fiberGrowth","fiberPersistence","fiberBend","fiberGuidance","livingRate","livingAmount","fiberLight","wisp","prism"]){
   $(id).addEventListener("input",()=>{
     if(structuralControls.includes(id)&&!foldEditDrafts.has(id)){
       foldEditDrafts.set(id,engine.snapshot());
@@ -279,6 +293,28 @@ $("clearSculpt").addEventListener("click",()=>{
 });
 // Curve Witch editing: one checkpoint per operation, never every pointer move.
 $("selectDrawFlow").addEventListener("click",()=>{setMode("curve");status("Draw flow · tap a dot to bend, or draw a new path");});
+$("livingMode").addEventListener("change",()=>{
+  const next=$("livingMode").value;
+  if(!LIVING_MODES.includes(next)||next===engine.livingMode)return;
+  const before=engine.snapshot();
+  engine.livingMode=next;field.livingMode=next;
+  curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
+  status(next==="still"?"Curve geometry frozen · existing material preserved":
+    "Living geometry: "+$("livingMode").selectedOptions[0].textContent);
+});
+$("bakeLiving").addEventListener("click",()=>{
+  if(engine.livingMode==="still"||!engine.flowCurves.length)return;
+  const before=engine.snapshot();
+  const posed=evaluateLivingCurves(engine.flowCurves,engine.time,
+    engine.livingMode,engine.livingRate,engine.livingAmount);
+  engine.flowCurves=cloneFlowCurves(posed);
+  engine.livingMode="still";field.livingMode="still";
+  if(engine!==field)field.flowCurves=cloneFlowCurves(engine.flowCurves);
+  $("livingMode").value="still";
+  selectedHandle=-1;
+  curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
+  status("Baked live shape into editable 3D force paths · pigment preserved");
+});
 for(const [id,digits] of [["braidTurns",2],["braidSpread",2]]){
   $(id).addEventListener("input",()=>{$(id+"Text").textContent=Number($(id).value).toFixed(digits);});
 }
@@ -299,9 +335,13 @@ $("braidCurve").addEventListener("click",()=>{
   const before=engine.snapshot();
   const pair=braidFlowCurve(curve,Number($("braidTurns").value),Number($("braidSpread").value));
   engine.flowCurves.splice(selectedCurve,1,...pair);
+  if(engine.livingMode==="still"){
+    engine.livingMode="unravel";field.livingMode="unravel";
+    $("livingMode").value="unravel";
+  }
   selectedCurve=0;selectedHandle=Math.min(3,pair[0].points.length-2);
   curveSelectionUI();snapshotCommand(before);drawCurveOverlay();
-  status("Two real 3D braided force strands · both edit independently");
+  status("Two living braided force strands · geometry now unbraids and rebraids");
 });
 $("curveType").addEventListener("change",()=>{
   const c=engine.flowCurves?.[selectedCurve];
@@ -402,7 +442,9 @@ canvas.addEventListener("wheel",event=>{
 $("pause").addEventListener("click",()=>{paused=!paused;$("pause").textContent=paused?"▶ Play":"Ⅱ Pause";status(paused?"Simulation paused":"Simulation resumed");});
 $("undo").addEventListener("click",undoStroke);$("redo").addEventListener("click",redoStroke);
 $("restart").addEventListener("click",()=>{if(!confirm("Restart this seed? Current pigment and touch changes will be replaced."))return;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(engine.seed,engine.morphology);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
-for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
+for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;
+field.livingMode=engine.livingMode;
+field.livingMode=engine.livingMode;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();$("genesis").value=field.morphology;status("Restarted "+field.morphology+" · seed "+field.seed);});
 $("new").addEventListener("click",()=>{if(!confirm("Create a new design? This replaces the current volume."))return;const seed=(field.seed+1+Math.floor(Math.random()*100000))>>>0;const flow=engine.flow,turbulence=engine.turbulence,integration=engine.integration;field.reset(seed,$("genesis").value);field.flow=flow;field.turbulence=turbulence;field.integration=integration;
 for(const id of structuralControls)field[id]=engine[id];field.forgeMode=engine.forgeMode;field.fiberEnabled=engine.fiberEnabled;if(engine!==field)engine.reset(field);selectedSculpt=-1;selectedCurve=-1;selectedHandle=-1;sculptSelectionUI();curveSelectionUI();drawCurveOverlay();clearHistory();status("New design · "+$("genesis").selectedOptions[0].textContent+" · seed "+seed);});
 $("png").addEventListener("click",()=>{try{draw();const a=document.createElement("a");a.download="volumetric-possession-"+field.seed+".png";a.href=canvas.toDataURL("image/png");a.click();status("Current camera view exported as PNG");}catch(err){status("PNG failed: "+err.message);}});
@@ -494,7 +536,12 @@ canvas.addEventListener("pointermove",event=>{
       if(point){
         const forward=cameraVectors(camera).forward;
         const depth=point.reduce((sum,v,i)=>sum+v*forward[i],0);
-        const next=pointFromScreen(canvas,camera,event,depth).point.map(v=>Math.max(-.93,Math.min(.93,v)));
+        // Apply the camera-space drag DELTA to the persistent base point.
+        // This stays usable while the projected animated pose is elsewhere.
+        const oldPoint=pointFromScreen(canvas,camera,
+          {clientX:oldX,clientY:oldY},depth).point;
+        const newPoint=pointFromScreen(canvas,camera,event,depth).point;
+        const next=point.map((v,i)=>Math.max(-.93,Math.min(.93,v+newPoint[i]-oldPoint[i])));
         if(Math.hypot(...next.map((v,i)=>v-point[i]))>1e-5){
           curve.points[active.curveHandle]=next;
           active.changed=true;
@@ -602,6 +649,7 @@ try{
   catch(gpuError){engine=field;engineMode="CPU";console.warn("GPU transport unavailable; CPU fallback",gpuError);}
   paletteSelect.value="Prismatic Riot";
   $("forgeMode").value=engine.forgeMode;
+  $("livingMode").value=engine.livingMode;
   $("fiberEnabled").value=engine.fiberEnabled?"on":"off";
   $("turbulence").value=field.turbulence;
   $("turbulenceText").textContent=field.turbulence.toFixed(1);

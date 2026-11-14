@@ -19,7 +19,8 @@ test("GPU and CPU snapshots preserve editable curves",()=>{
  const g=src("src/gpu-transport.js"),c=src("src/field.js");
  assert.match(g,/flowCurves:cloneFlowCurves\(this\.flowCurves\)/);
  assert.match(g,/cloneFlowCurves\(s\.flowCurves\|\|\[\]\)/);
- assert.match(c,/curveVelocity\(this\.flowCurves,x,y,z,t,out\)/);
+ assert.match(c,/curveVelocity\(this\._stepCurves\|\|evaluateLivingCurves/);
+ assert.match(c,/this\._stepCurves=evaluateLivingCurves\(this\.flowCurves,this\.time\+dt/);
 });
 test("mobile drawing and undo controls wired",()=>{
  const h=src("index.html"),m=src("src/main.js");

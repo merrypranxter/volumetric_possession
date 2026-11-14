@@ -106,7 +106,7 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 </head>
 <body>
 <main>
-<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / TOPOLOGY GREMLIN 01K</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
+<header><div><p class="eyebrow">MATHEMAGICAL / EXPERIMENT 12</p><h1>VOLUMETRIC<br>POSSESSION</h1></div><div class="meta">PHASE 01<br><span class="muted">LIVING VOLUME / LIVING BRAID 01L</span><div id="engineBadge" aria-label="Simulation backend">Detecting engine…</div></div></header>
 <section class="stage" aria-label="Artwork and direct interaction">
 <div class="frame"><canvas id="art" aria-label="Full-screen interactive three-dimensional pigment atmosphere"></canvas><div id="sculptMarkers" aria-hidden="true"></div><canvas id="curveOverlay" aria-hidden="true"></canvas><div class="overlay" id="modeLabel">STIR · drag through pigment</div></div>
 </section>
@@ -191,6 +191,27 @@ body.art-only header,body.art-only .dock,body.art-only .overlay{display:none!imp
 <label>Braid spread <output id="braidSpreadText">0.13</output>
 <input id="braidSpread" type="range" min=".04" max=".28" step=".01" value=".13"></label>
 </div>
+<details class="subsystem" id="livingBraidPanel" open>
+<summary>〰 Living Braid — the geometry itself moves</summary>
+<div class="grid">
+<label>Curve evolution<select id="livingMode">
+<option value="still" selected>Still — keep hand-drawn form</option>
+<option value="writhe">Writhe — flowing 3D wave</option>
+<option value="grow">Grow / Retract — extend and withdraw</option>
+<option value="unravel">Unbraid / Rebraid — paired breathing</option>
+<option value="reconnect">Tail Exchange — meet and reconnect</option>
+</select></label>
+<label>Live pose <output id="livingStatus">Resting geometry</output><span class="muted">Material remembers every previous shape</span></label>
+<label>Cycle speed <output id="livingRateText">0.65</output>
+<input id="livingRate" type="range" min=".05" max="2" step=".05" value=".65"></label>
+<label>Shape excursion <output id="livingAmountText">0.18</output>
+<input id="livingAmount" type="range" min="0" max=".3" step=".01" value=".18"></label>
+</div>
+<div class="actionbar">
+<button id="bakeLiving" type="button">✦ Bake current shape</button>
+</div>
+<p class="help">These options move the real 3D force paths once per simulation step. Writhe bends a path; Grow/Retract animates its tip; Unbraid/Rebraid and Tail Exchange need two paths. Tail Exchange brings two curves together and swaps their far ends; bake a pose to make it permanent. Baking is Undoable and never overwrites your pigment or fiber-memory history. Select Still to disable geometry motion without resetting anything.</p>
+</details>
 <p class="help">⌁ Draw Flow: tap a glowing control-point dot and drag to bend its own part of the 3D curve, or drag the line between dots to move the whole curve. Select an interior dot and press Split to make two independent pieces. Braid transforms a single selected path into two opposing, intertwined paths following a transported 3D frame; it uses both curve slots. You can Undo every operation without erasing existing material. Draw depth is controlled by Touch Depth.</p>
 </details>
 <p class="help">These are different divergence-free baseline flow laws—not merely new speeds. Switching a flow changes future transport without resetting existing pigment. Stir adds a local temporary impulse; Inject paints density; Orbit changes only the viewpoint.</p>

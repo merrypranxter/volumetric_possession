@@ -2,6 +2,7 @@ import {forgeAt,forgePhase,FORGE_MODES} from "./filament-forge.js";
 import {FiberMemory} from "./fiber-memory.js";
 import {cloneSculptNodes,sculptVelocity} from "./flow-sculpt.js";
 import {cloneFlowCurves,curveVelocity} from "./flow-curve.js";
+import {evaluateLivingCurves,LIVING_MODES} from "./living-braid.js";
 // Persistent CPU 3D dye field. The analytic vortices are divergence-free individually.
 // Semi-Lagrangian transport is approximate and dissipative, not a Navier-Stokes solver.
 export const N = 28;
@@ -17,6 +18,7 @@ export class PigmentField {
     this.fibers=new FiberMemory(N);this.fiberGrowth=2.3;this.fiberPersistence=.88;
     this.fiberBend=1;this.fiberGuidance=.65;this.fiberEnabled=true;
     this.sculptNodes=[];this.flowCurves=[];
+    this.livingMode="still";this.livingRate=.65;this.livingAmount=.18;this._stepCurves=null;
     this.forgeMode="rosette";this.forgePower=.75;this.forgeWidth=.17;this.forgePace=.65;
     this.flow="cathedral";this.morphology="cathedral";this.time=0;this.dirty=true;this.reset(seed);
   }
@@ -24,7 +26,7 @@ export class PigmentField {
     const valid=["cathedral","gyroid","trefoil","braid"];
     if(!valid.includes(morphology))throw Error("Unknown genesis morphology: "+morphology);
     this.seed=seed>>>0;this.morphology=morphology;this.time=0;this.impulses.length=0;
-    this.sculptNodes=[];this.flowCurves=[]; // Restart clears authored force geometry.
+    this.sculptNodes=[];this.flowCurves=[];this._stepCurves=null; // Restart clears authored geometry.
     this.fibers.reset();
     const rng=random(this.seed),sx=rng()*.32-.16,sy=rng()*.22-.11,sz=rng()*.30-.15;
     // Pre-sample the closed trefoil core, so genesis is deterministic and inexpensive.
@@ -77,7 +79,8 @@ export class PigmentField {
   snapshot(){return {seed:this.seed,morphology:this.morphology,flow:this.flow,turbulence:this.turbulence,integration:this.integration,foldWrite:this.foldWrite,foldPersistence:this.foldPersistence,foldGrip:this.foldGrip,
     fiberGrowth:this.fiberGrowth,fiberPersistence:this.fiberPersistence,fiberBend:this.fiberBend,
     fiberGuidance:this.fiberGuidance,fiberEnabled:this.fiberEnabled,fibers:this.fibers.snapshot(),
-    sculptNodes:cloneSculptNodes(this.sculptNodes),flowCurves:cloneFlowCurves(this.flowCurves),forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
+    sculptNodes:cloneSculptNodes(this.sculptNodes),flowCurves:cloneFlowCurves(this.flowCurves),
+    livingMode:this.livingMode,livingRate:this.livingRate,livingAmount:this.livingAmount,forgeMode:this.forgeMode,forgePower:this.forgePower,forgeWidth:this.forgeWidth,forgePace:this.forgePace,time:this.time,values:this.a.slice()};}
   restore(s){
     this.seed=s.seed;this.morphology=s.morphology||"cathedral";this.flow=s.flow||"cathedral";
     this.time=s.time;this.turbulence=s.turbulence||0;this.integration=s.integration||"euler";this.foldWrite=s.foldWrite??1.4;
@@ -87,6 +90,8 @@ export class PigmentField {
     this.fiberEnabled=s.fiberEnabled??true;this.fibers.restore(s.fibers);
     this.sculptNodes=cloneSculptNodes(s.sculptNodes||[]);
     this.flowCurves=cloneFlowCurves(s.flowCurves||[]);
+    this.livingMode=LIVING_MODES.includes(s.livingMode)?s.livingMode:"still";
+    this.livingRate=s.livingRate??.65;this.livingAmount=s.livingAmount??.18;this._stepCurves=null;
     this.forgeMode=FORGE_MODES.includes(s.forgeMode)?s.forgeMode:"rosette";
     this.forgePower=s.forgePower??.75;this.forgeWidth=s.forgeWidth??.17;this.forgePace=s.forgePace??.65;
     this.a.set(s.values);this.impulses.length=0;this.dirty=true;
@@ -147,9 +152,13 @@ export class PigmentField {
     }
     out[0]=vx;out[1]=vy;out[2]=vz;
     sculptVelocity(this.sculptNodes,x,y,z,t,out);
-    curveVelocity(this.flowCurves,x,y,z,t,out);
+    curveVelocity(this._stepCurves||evaluateLivingCurves(this.flowCurves,t,
+      this.livingMode,this.livingRate,this.livingAmount),x,y,z,t,out);
   }
   step(dt,speed){
+    // Cache effective moving geometry ONCE per step, not per 28³ voxel.
+    this._stepCurves=evaluateLivingCurves(this.flowCurves,this.time+dt,
+      this.livingMode,this.livingRate,this.livingAmount);
     const a=this.a,b=this.b,v=[0,0,0],source=[0,0,0];
     const emit=dt>0&&this.forgePower>0&&this.forgeMode!=="off";
     const phase=forgePhase(this.time+dt,this.forgePace,this.seed);
@@ -215,6 +224,7 @@ export class PigmentField {
     this.a=b;this.b=a;this.time+=dt;this.dirty=true;
     if(this.fiberEnabled&&dt>0)this.fibers.step(this,dt,speed);
     this.impulses=this.impulses.filter(s=>(s.ttl-=dt)>0);
+    this._stepCurves=null;
   }
   packFibers(){return this.fibers.pack();}
   pack(){
